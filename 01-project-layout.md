@@ -684,7 +684,7 @@ store, err := s3store.New(ctx, s3store.Config{Endpoint: cfg.S3.Endpoint, Region:
 version: "3"
 
 vars:
-  STANDARDS_URL: <standards-repo-url>
+  STANDARDS_URL: https://github.com/michaelolof/golang-service-standards.git
 
 includes:
   standards:

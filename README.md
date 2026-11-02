@@ -12,36 +12,27 @@ The libraries [`errx`](https://github.com/michaelolof/errx), [`gofi`](https://gi
 
 ## Install
 
-This isn't a package you download. A project keeps its own copy of this repo in a folder called `.standards/`, pinned to a version, and that copy brings the rules and the checks with it.
+This isn't a package you download. A project keeps its own copy of [this repo](https://github.com/michaelolof/golang-service-standards) in a folder called `.standards/`, pinned to a version, and that copy brings the rules and the checks with it.
 
-### 1. Publish this repo, once
+If your projects can't reach GitHub, mirror this repo to any git host, and use that address in the steps below.
 
-Push it to any git host your projects can reach, and tag a version. Its address is the `<standards-repo-url>` in the steps below.
+### 1. Add it to a project
 
-```sh
-git init && git add -A && git commit -m "Standards v1.0.0"
-git tag v1.0.0
-git remote add origin <standards-repo-url>
-git push origin HEAD v1.0.0
-```
-
-### 2. Add it to a project
-
-Start at the project's root. The project needs a `go.mod`, at least one Go package, and everything committed, because `git subtree` refuses to run over uncommitted files.
+Start at the project's root. The project needs a `go.mod`, at least one Go package, and everything committed, because `git subtree` refuses to run over uncommitted files. These commands use `v0.1.0`. If there's a newer [tag](https://github.com/michaelolof/golang-service-standards/tags), use that instead.
 
 ```sh
-git subtree add --prefix=.standards <standards-repo-url> v1.0.0 --squash
-echo v1.0.0 > .standards-version
+git subtree add --prefix=.standards https://github.com/michaelolof/golang-service-standards.git v0.1.0 --squash
+echo v0.1.0 > .standards-version
 cp .standards/templates/Taskfile.yml Taskfile.yml
 ```
 
-Open `Taskfile.yml` and replace `<standards-repo-url>` with the real address. If the project already has a Taskfile, don't overwrite it. Copy the `vars`, the `includes`, `check` and `check:fast` into it from the template.
+Open `Taskfile.yml` and set `STANDARDS_URL` to `https://github.com/michaelolof/golang-service-standards.git`. If the project already has a Taskfile, don't overwrite it. Copy the `vars`, the `includes`, `check` and `check:fast` into it from the template.
 
 Then finish the setup:
 
 ```sh
 task setup
-git add -A && git commit -m "Pin standards v1.0.0"
+git add -A && git commit -m "Pin standards v0.1.0"
 task check
 ```
 
@@ -49,11 +40,11 @@ task check
 
 `task check` runs every check. The first run takes longer because it builds the linter. An existing project will probably fail it at first, so turn the failures into a task list and fix them ([ADO-6](10-adoption.md#ado-6--new-and-existing-projects)).
 
-### 3. Make it block merges
+### 2. Make it block merges
 
 In your CI, add a job that installs Go and Task, and runs `task check`. Then mark that job as required on the default branch, in your git host's settings. This step can't be done from inside the repo, and without it a failing change can still merge.
 
-### 4. Everyone else
+### 3. Everyone else
 
 Anyone who clones the project, person or agent, runs `task setup` once. It changes no tracked files on an up-to-date project. It only turns on the git hook, which git doesn't copy between clones.
 
@@ -83,8 +74,8 @@ orders/
 orders/
 ├── .gitignore
 ├── .golangci.yml        # new: the lint config, with your module path filled in. Don't edit it.
-├── .standards/          # new: this repo at v1.0.0: rules, lint config, hooks, templates. Don't edit it.
-├── .standards-version   # new: contains v1.0.0
+├── .standards/          # new: this repo at v0.1.0: rules, lint config, hooks, templates. Don't edit it.
+├── .standards-version   # new: contains v0.1.0
 ├── AGENTS.md            # new: what agents read. Your own rules go under its last heading.
 ├── README.md
 ├── Taskfile.yml         # new: the tasks below. Add your own here.
@@ -100,7 +91,7 @@ orders/
 
 Your code, `go.mod`, `README.md` and `.gitignore` don't change, and `go list ./...` still lists only your own packages. A few things change that the tree doesn't show:
 
-- **Git history** gains three commits: two from `git subtree`, and your "Pin standards v1.0.0".
+- **Git history** gains three commits: two from `git subtree`, and your "Pin standards v0.1.0".
 - **On each machine,** `task setup` turns on the git hook, and the first `task lint` builds the linter into `.standards/lint/bin/`, which git ignores.
 - **New commands** come with it:
 
@@ -128,7 +119,7 @@ After:
 version: "3"
 
 vars:
-  STANDARDS_URL: <standards-repo-url>
+  STANDARDS_URL: https://github.com/michaelolof/golang-service-standards.git
 
 includes:
   standards:
@@ -252,13 +243,13 @@ Rules no tool can check yet are checked in review, by citing the rule's ID. [How
 
 ### Upgrading
 
-A project moves to a new version with a normal PR, so the rule changes show up in its diff:
+A project moves to a new version with a normal PR, so the rule changes show up in its diff. Here `v0.2.0` stands for the [tag](https://github.com/michaelolof/golang-service-standards/tags) you're moving to:
 
 ```sh
-git subtree pull --prefix=.standards <standards-repo-url> v1.1.0 --squash
-echo v1.1.0 > .standards-version
+git subtree pull --prefix=.standards https://github.com/michaelolof/golang-service-standards.git v0.2.0 --squash
+echo v0.2.0 > .standards-version
 task setup
-git add -A && git commit -m "Upgrade standards to v1.1.0"
+git add -A && git commit -m "Upgrade standards to v0.2.0"
 ```
 
 `task setup` rewrites the standard's part of `AGENTS.md`, and keeps the project's own rules under the heading. `check` depends on `standards:check`, so any new check in the standard starts running without changing the project's Taskfile.

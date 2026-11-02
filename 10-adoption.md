@@ -2,7 +2,7 @@
 
 This says how any project consumes the standard, and what makes it mandatory for the agents and people working there. It needs only git, Go and [Task](https://taskfile.dev). It doesn't depend on a particular git host, CI product, operating system or coding agent.
 
-The standard lives in its own git repo, with version tags. A project keeps a pinned copy of it. Three things then make it mandatory:
+The standard lives in [its own git repo](https://github.com/michaelolof/golang-service-standards), with version tags. A project keeps a pinned copy of it. Three things then make it mandatory:
 1. **The agent is told.** `AGENTS.md` loads the rules at the start of every session.
 2. **The agent is stopped.** A hook runs the checks before it finishes or pushes.
 3. **The merge is stopped.** CI blocks anything that fails, whoever or whatever wrote it.
@@ -28,11 +28,11 @@ The first alone isn't enough, because an agent can ignore an instruction file. O
 **Rule.** Add the standard with `git subtree`, and record the version. The [README](README.md#install) has the full steps. The project needs a `go.mod`, at least one Go package and a clean working tree: `git subtree` stops with "working tree has modifications" otherwise, and `task check` has nothing to lint or test in an empty project (tested).
 
 ```sh
-git subtree add --prefix=.standards <standards-repo-url> v1.0.0 --squash
-echo v1.0.0 > .standards-version
+git subtree add --prefix=.standards https://github.com/michaelolof/golang-service-standards.git v0.1.0 --squash
+echo v0.1.0 > .standards-version
 cp .standards/templates/Taskfile.yml Taskfile.yml   # then set STANDARDS_URL in it
 task setup
-git add -A && git commit -m "Pin standards v1.0.0"
+git add -A && git commit -m "Pin standards v0.1.0"
 ```
 
 [templates/Taskfile.yml](templates/Taskfile.yml) has `check` and `check:fast`, because the hooks and CI call them. If the project already has a Taskfile, copy those two tasks, the `vars` and the `includes` into it. Without them, every hook fails with `Task "check:fast" does not exist` (tested).
@@ -45,7 +45,7 @@ my-project/
   Taskfile.yml         # includes .standards/Taskfile.standards.yml
   .golangci.yml        # generated from the standard; nobody edits it
   .standards/          # the standard at the pinned version; nobody edits it
-  .standards-version   # v1.0.0
+  .standards-version   # v0.1.0
 ```
 
 **Why `git subtree` and not a submodule.** The rules become ordinary files in the project, so every clone has them. A cloud agent or a CI job that doesn't load submodules still sees them (tested on a local repo):
@@ -66,7 +66,7 @@ my-project/
 **Rule.** CI compares `.standards/` with the pinned tag, and fails if they differ. `task standards:drift` does it, using only git:
 
 ```sh
-git fetch -q <standards-repo-url> "refs/tags/$(cat .standards-version)"
+git fetch -q https://github.com/michaelolof/golang-service-standards.git "refs/tags/$(cat .standards-version)"
 test "$(git rev-parse 'FETCH_HEAD^{tree}')" = "$(git rev-parse 'HEAD:.standards')"
 ```
 
@@ -211,10 +211,10 @@ New feature work waits until step 5.
 - A project upgrades with a normal PR, so the rule changes show up in its diff. Its CI must pass before it merges (tested, apart from CI):
 
   ```sh
-  git subtree pull --prefix=.standards <standards-repo-url> v1.1.0 --squash
-  echo v1.1.0 > .standards-version
+  git subtree pull --prefix=.standards https://github.com/michaelolof/golang-service-standards.git v0.2.0 --squash
+  echo v0.2.0 > .standards-version
   task setup
-  git add -A && git commit -m "Upgrade standards to v1.1.0"
+  git add -A && git commit -m "Upgrade standards to v0.2.0"
   ```
 
 - `task setup` rewrites the standard's part of `AGENTS.md`, keeps the project's rules under the heading, and rewrites `.golangci.yml`. If someone skips it, `task check` fails and says which command to run (tested).
@@ -229,7 +229,7 @@ After changing a rule in the standard, run `go run ./tools/genrules` to update `
 | Rule documents, `RULES.md` and its generator | Done |
 | Lint config and the `requiredtag` plugin | Done, and tested from `.standards/` |
 | Templates (`AGENTS.md`, `Taskfile.yml`, `claude-settings.json`), hooks, `standards:check` | Done, and tested |
-| The standard's first version tag | To do |
+| The standard's first version tag | Done: `v0.1.0` |
 | Shared architecture test (`arch` in the Taskfile) | To build. Until then, the rules it enforces are checked in review. |
 | `constquery` and `repoverbs` analyzers | To build. Until then, the rules they enforce are checked in review. |
 | Shared test helpers (`testharness`, `apitest`, `pagination.AssertStablePaging`, `testutils.AssertConcurrentUpdateConflicts`, the migrate-twice test, conformance suites) | To build. A project writes its own until then, from the descriptions in [07](07-testing.md) and [06](06-persistence.md). |
