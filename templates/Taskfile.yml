@@ -1,0 +1,16 @@
+version: "3"
+
+vars:
+  STANDARDS_URL: <standards-repo-url>
+
+includes:
+  standards:
+    taskfile: .standards/Taskfile.standards.yml
+    dir: .
+    flatten: true
+
+tasks:
+  test:       {desc: Unit tests, no infra, cmds: [go test -race ./...]}
+  build:      {desc: Build everything, cmds: [go build ./...]}
+  check:fast: {desc: What the hooks run (the standard's local checks and unit tests), deps: [standards:check:fast, test]}
+  check:      {desc: CI gate (read-only), deps: [standards:check, test, build]}

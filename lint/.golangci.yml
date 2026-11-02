@@ -1,0 +1,306 @@
+# Shared golangci-lint config for Go services.
+# Validated on golangci-lint v2.15.0. It needs the custom binary that has the standard's plugin compiled in (requiredtag).
+# In a project, `task lint` builds that binary and runs it (10-adoption.md, ADO-1).
+#
+# Rule IDs in comments (LAY-, DOM-, ABS-, ERR-, HTTP-, CTX-, CON-, LOG-, OBS-, DATA-, TEST-, STY-)
+# point to the standard's documents.
+#
+# Don't edit this file in a project. `task lint:config` writes .golangci.yml from it, with the project's module path filled in.
+version: "2"
+
+run:
+  timeout: 10m
+  relative-path-mode: gomod # exclusion paths below are module-relative
+  tests: false # restructuring tests is paused, so test files aren't linted (TEST-14)
+  build-tags: [integration] # integration tests must still compile (TEST-1)
+  # No run.go: go.mod's `go` line decides.
+
+linters:
+  default: none
+  enable:
+    # correctness baseline
+    - govet
+    - staticcheck # SA bugs; ST1000 package docs, ST1003 initialisms, ST1016 receivers
+    - errcheck
+    - ineffassign
+    - unused
+    # style, naming, shape (STY-*)
+    - revive
+    - gocritic
+    - gocognit
+    - wsl_v5 # STY-9 paragraphs; auto-fixable with --fix
+    - requiredtag # STY-3 required fields, marked per field with a struct tag (the standard's plugin)
+    - funcorder
+    - embeddedstructfieldcheck
+    - modernize
+    - intrange
+    - copyloopvar
+    - usestdlibvars
+    - musttag
+    - tagliatelle
+    - nolintlint
+    - gochecknoinits
+    - reassign
+    # errors (ERR-*)
+    - errorlint
+    - wrapcheck
+    - nilerr
+    - nilnil
+    - errname
+    # interfaces (ABS-*)
+    - iface
+    - ireturn
+    - interfacebloat
+    # context, IO, security (CTX-*, DATA-5)
+    - containedctx
+    - contextcheck
+    - noctx
+    - bodyclose
+    - gosec
+    # policy
+    - forbidigo
+    - depguard
+    # tests (TEST-*)
+    - testifylint
+    - thelper
+    - usetesting
+    - testpackage
+
+  settings:
+    govet:
+      enable-all: true
+      disable: [fieldalignment, shadow] # layout churn; shadowing `err` is idiomatic
+
+    staticcheck:
+      checks: ["all", "-ST1020", "-ST1021", "-ST1022", "-QF1008"]
+      # The default list is spelled out because v2.15 panics on staticcheck's "inherit" token.
+      initialisms: [ACL, API, ASCII, CPU, CSS, DNS, EOF, GUID, HTML, HTTP, HTTPS,
+        ID, IP, JSON, QPS, RAM, RPC, SLA, SMTP, SQL, SSH, TCP, TLS, TTL, UDP, UI,
+        GID, UID, UUID, URI, URL, UTF8, VM, XML, XMPP, XSRF, XSS, SIP, RTP, AMQP,
+        DB, TS, AWS, CQL, DEK, DLQ, EVM, HMAC, JWT, KMS, KYC, MFA, OTP, PII, SDK,
+        SHA, ULID]
+
+    errcheck:
+      check-type-assertions: true
+
+    revive:
+      enable-default-rules: false
+      rules:
+        # naming (LAY-8, STY-2)
+        - name: var-naming
+          arguments: [[], [ULID, KMS, DEK, JWT, KYC, OTP, SDK, DLQ, HMAC, PII, MFA, EVM]]
+        - name: package-naming
+          arguments:
+            - userDefinedBadNames: [helper, helpers, shared, base, models, model,
+                coreutils, timeutils, httputils, repoutil, testutil]
+        - name: package-directory-mismatch
+        - name: filename-format
+          arguments: ["^[a-z0-9]+(_[a-z0-9]+)*\\.go$"]
+        - name: receiver-naming
+        - name: error-naming
+        - name: error-strings
+        - name: time-naming
+        - name: redefines-builtin-id
+        - name: import-alias-naming
+        - name: redundant-import-alias
+        - name: dot-imports
+        - name: blank-imports
+        - name: exported # doc comments + stutter
+        - name: package-comments # LAY-11
+        # shape (STY-3)
+        - name: indent-error-flow
+        - name: superfluous-else
+        - name: early-return
+        - {name: max-control-nesting, arguments: [4]}
+        - {name: argument-limit, arguments: [6]}
+        - {name: function-result-limit, arguments: [3]}
+        - name: bare-return
+        - name: deep-exit # LAY-2
+        - name: unexported-return
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: file-length-limit # LAY-10
+          arguments: [{max: 1000, skipComments: true, skipBlankLines: true}]
+        # modern / misc (STY-7)
+        - name: use-any
+        - name: var-declaration
+        - name: increment-decrement
+        - name: comment-spacings
+        - name: unnecessary-format
+        - name: use-errors-new
+
+    gocritic:
+      # The default stable set stays on; it includes exitAfterDefer (LAY-2).
+      enabled-checks:
+        - commentedOutCode
+        - todoCommentWithoutDetail
+        - docStub
+        - deferInLoop
+        - sloppyReassign
+        - unnamedResult
+        - emptyStringTest
+        - httpNoBody
+        - nestingReduce
+        - typeAssertChain
+      settings:
+        unnamedResult: {checkExported: true}
+
+    # STY-3: no length limit. Complexity and nesting measure how hard a function is to follow.
+    gocognit: {min-complexity: 20}
+    wsl_v5: # STY-9: default checks, plus a blank line after every closing brace
+      enable: [after-block]
+
+    custom:
+      # STY-3: a literal must set every field tagged required. Fields are optional unless tagged.
+      requiredtag:
+        type: module
+        description: Struct literals set every field a struct tag marks required (STY-3)
+        original-url: ./requiredtag
+        settings:
+          tags: [validate:required, lint:required]
+          allow-empty-returns: true # return T{}, err and return T{}, false
+    funcorder: {constructor: true, struct-method: true, alphabetical: false}
+    embeddedstructfieldcheck: {forbid-mutex: true} # ABS-9
+    modernize:
+      disable: [omitzero] # gofi's encoder honours only omitempty
+    tagliatelle:
+      case: {rules: {json: snake}}
+    nolintlint: {require-explanation: true, require-specific: true}
+    errorlint: {errorf: false, asserts: true, comparison: true} # ERR-6
+    wrapcheck: # ERR-3
+      extra-ignore-sigs: [errx.New(, errx.Newf(, errx.NewKind(, errx.NewKindf(,
+        errx.Wrap(, errx.WrapKind(, httperr.]
+      ignore-package-globs: ["*/internal/http/httperr", "*/internal/core/httperr"]
+    nilnil: {detect-opposite: true}
+    iface: {enable: [identical, unused, opaque]} # ABS-1
+    interfacebloat: {max: 7} # ABS-1
+    ireturn: {allow: [anon, error, empty, stdlib, generic]} # ABS-2
+    gosec:
+      includes: [G201, G202, G402, G404, G115] # SQL concat (DATA-5), TLS, weak rand, int overflow
+
+    forbidigo:
+      analyze-types: true
+      # Each msg starts with a [tag]; path exceptions in exclusions.rules match on the tag.
+      forbid:
+        - {pattern: '^signal\.Notify$', msg: "[signal] use signal.NotifyContext (LAY-4)"}
+        - {pattern: '^os\.(Getenv|LookupEnv|Environ|Setenv)$', msg: "[env] read config via internal/config (LAY-12)"}
+        - {pattern: '^time\.Now$', msg: "[clock] inject clock.Clock or pass now (DOM-3)"}
+        - {pattern: '^context\.(Background|TODO)$', msg: "[ctx] accept ctx from the caller (CTX-4)"}
+        - {pattern: '^time\.Sleep$', msg: "[sleep] select on a timer and ctx.Done() (CON-2)"}
+        - {pattern: '^testing\.Short$', msg: "[short] use the integration build tag (TEST-2)"}
+        - {pattern: '^(fmt\.Errorf|errors\.New)$', msg: "[errs] create errors with errx (ERR-12)"}
+        - pattern: '^errx\.(Wrapf|WrapKindf|Is|As|Join|Unwrap|Contains|Must|Panic|UseLogger|ParseStampedError)$'
+          pkg: '^github\.com/michaelolof/errx$'
+          msg: "[errx] outside the sanctioned errx surface (ERR-2)"
+        - {pattern: '^panic$', msg: "[panic] return an error (ERR-11)"}
+        - {pattern: '^logger\.(Infof|Warnf|Errorf|InfoT|WarnT|ErrorT|Wrapf?|WrapErrorf?)$', msg: "[logger] legacy logger API (LOG-1)"}
+        - {pattern: '^slog\.(Debug|Info|Warn|Error|Log|LogAttrs)(Context)?$', msg: "[slog] log through internal/foundation/logger: logger.Info(stamp, ctx, event, ...) (LOG-1)"}
+        - {pattern: '^slog\.(New|Default|SetDefault)$', msg: "[slog] the process logger is set up once by logger.Initialize (LOG-1)"}
+        - pattern: '^gofi\.(GofiStore|ReadOnlyStore)\.(Get|Set|Has|TryGet|All)$'
+          pkg: '^github\.com/michaelolof/gofi$'
+          msg: "[gofi-store] use gofi.StoreGet/StoreSet with a typed key (CTX-3)"
+        - {pattern: '\.(BeginTx|BeginTxFunc|StartSession|WithTransaction)$', msg: "[tx] transactions live inside repository methods or internal/adapters/*store (DATA-4)"}
+        - {pattern: '\.PageState$', msg: "[cursor] use the pagination cursor codec (DATA-9)"}
+        - {pattern: '^fmt\.(Appendf|Sprintf)$', msg: "[httperr-fmt] encode error bodies with encoding/json (ERR-7)"}
+
+    depguard: # LAY-7, ABS-7, OBS-1, TEST-4
+      rules:
+        sdk-confinement:
+          list-mode: lax
+          files: ["$all", "!**/internal/adapters/**", "!**/internal/repository/**", "!**/cmd/**", "!**/*test/**", "!**/pkg/**"]
+          deny:
+            - {pkg: github.com/jackc/pgx, desc: drivers live in adapters/repository}
+            - {pkg: go.mongodb.org/mongo-driver, desc: drivers live in adapters/repository}
+            - {pkg: github.com/gocql/gocql, desc: drivers live in adapters/repository}
+            - {pkg: github.com/redis/go-redis, desc: drivers live in adapters}
+            - {pkg: github.com/twmb/franz-go, desc: drivers live in adapters}
+            - {pkg: github.com/hibiken/asynq, desc: drivers live in adapters}
+            - {pkg: github.com/aws/aws-sdk-go-v2, desc: SDKs live in adapters}
+            - {pkg: github.com/minio/minio-go, desc: SDKs live in adapters}
+        http-confinement:
+          list-mode: lax
+          files: ["$all", "!**/internal/http/**", "!**/cmd/**"]
+          deny:
+            # `$` = exact match; a bare prefix would also hit gofi-proxy-mocker.
+            - {pkg: 'github.com/michaelolof/gofi$', desc: transport only}
+            - {pkg: github.com/michaelolof/gofi/, desc: transport only}
+            - {pkg: github.com/valyala/fasthttp, desc: transport only}
+        pkg-isolation: # LAY-1: pkg/ libraries are extraction-ready
+          list-mode: lax
+          files: ["**/pkg/**"]
+          deny:
+            - {pkg: MODULE/internal, desc: pkg/ libraries must not import internal/}
+        config-confinement:
+          list-mode: lax
+          files: ["$all", "!**/cmd/**", "!**/internal/config/**"]
+          deny:
+            - {pkg: MODULE/internal/config, desc: parse in cmd and pass values down}
+        otel-confinement:
+          list-mode: lax
+          files: ["$all", "!**/internal/foundation/telemetry/**", "!**/cmd/**"]
+          deny:
+            - {pkg: go.opentelemetry.io/otel/sdk, desc: setup lives in foundation/telemetry}
+            - {pkg: go.opentelemetry.io/otel/exporters, desc: setup lives in foundation/telemetry}
+        test-libraries:
+          list-mode: lax
+          files: ["$all"]
+          deny:
+            - {pkg: github.com/stretchr/testify/suite, desc: plain table tests}
+            - {pkg: github.com/stretchr/testify/mock, desc: hand-written fakes}
+            - {pkg: github.com/google/go-cmp, desc: testify require}
+            - {pkg: github.com/golang/mock, desc: hand-written fakes}
+            - {pkg: go.uber.org/mock, desc: hand-written fakes}
+            - {pkg: github.com/testcontainers/testcontainers-go, desc: compose-based test infra}
+        godotenv-tests-only:
+          list-mode: lax
+          files: ["$all", "!$test", "!**/*test/**"]
+          deny:
+            - {pkg: github.com/joho/godotenv, desc: only tests load .env}
+
+    testifylint: {enable-all: true}
+    thelper:
+      test: {first: true, name: true, begin: true}
+      tb: {first: true, name: true, begin: true}
+    testpackage: {skip-regexp: '(export|internal)_test\.go'}
+
+  exclusions:
+    generated: strict
+    warn-unused: false # one shared file; some rules are idle in some repos
+    paths:
+      - '(^|/)(testutil|testutils|testdata)/' # test helpers, paused with the tests (TEST-14)
+      - '^tests?/'
+    rules:
+      - path: '_test\.go'
+        linters: [gocognit, wrapcheck, musttag, gosec, ireturn, containedctx, errname, requiredtag]
+      - path: '_test\.go'
+        linters: [revive]
+        text: '^(exported|argument-limit|function-result-limit|max-control-nesting):'
+      - {path: '_test\.go', linters: [forbidigo], text: '\[(errs|ctx|sleep|panic)\]'}
+      - {path: '^(cmd|internal/config)/', linters: [forbidigo], text: '\[env\]'}
+      - {path: '^cmd/', linters: [forbidigo], text: '\[ctx\]'}
+      - {path-except: '(^internal/(domain|core)/|(^|/)[a-z]*test/)', linters: [forbidigo], text: '\[clock\]'}
+      - {path: '^internal/(repository|adapters/[a-z]+store)/', linters: [forbidigo], text: '\[tx\]'} # DATA-4
+      - {path-except: '^internal/(http|core)/', linters: [forbidigo], text: '\[cursor\]'}
+      - {path-except: '/httperr/', linters: [forbidigo], text: '\[httperr-fmt\]'}
+      # LAY-1: pkg/ libraries follow Go conventions, not the ones here (errx, the logger package, wrapcheck stamps).
+      - {path: '^pkg/', linters: [forbidigo], text: '\[(errs|errx|logger|ctx)\]'}
+      # LOG-1: only the logger package and main touch slog; the logger's own functions take the stamp before ctx.
+      - {path: '^(internal/foundation/logger|cmd)/', linters: [forbidigo], text: '\[slog\]'}
+      - {path: '^internal/foundation/logger/', linters: [revive], text: 'context-as-argument'}
+      - {path: '^pkg/', linters: [wrapcheck]}
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+formatters:
+  enable:
+    - gofumpt # strict superset of gofmt (STY-1)
+    - gci # std | third-party | this module
+  settings:
+    gofumpt:
+      extra: {group-params: true, clothe-returns: true}
+    gci:
+      sections: [standard, default, localmodule] # localmodule reads go.mod: no per-repo prefix
+  exclusions:
+    generated: strict

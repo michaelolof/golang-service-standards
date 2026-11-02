@@ -1,0 +1,110 @@
+# The standard's own tasks. A project includes this file from its Taskfile:
+#
+#   includes:
+#     standards:
+#       taskfile: .standards/Taskfile.standards.yml
+#       dir: .
+#       flatten: true
+version: "3"
+
+vars:
+  LINT: .standards/lint/bin/golangci-lint
+
+tasks:
+  setup:
+    desc: Write AGENTS.md and .golangci.yml, and turn on the git hook. Run after adding or upgrading the standard, and once on each clone
+    cmds:
+      - task: agents
+      - task: lint:config
+      - git config core.hooksPath .standards/hooks
+
+  agents:
+    desc: Write AGENTS.md from the standard, keeping the project's own rules. An older AGENTS.md is set aside as AGENTS.old.md for review
+    silent: true
+    cmds:
+      - |
+        template=.standards/templates/AGENTS.md
+        heading="## This project's own rules"
+        own=""
+        if grep -qxF "$heading" AGENTS.md 2>/dev/null; then
+          if ! head -c $(wc -c < $template) AGENTS.md | cmp -s - $template; then
+            if [ -n "$(git status --porcelain -- AGENTS.md)" ]; then
+              echo "AGENTS.md has uncommitted edits, and this would replace everything above the line: $heading" >&2
+              echo "Commit them, or move them below that line, then run this again." >&2
+              exit 1
+            fi
+            echo "Replaced the standard's part of AGENTS.md. Run git diff AGENTS.md to see what changed."
+          fi
+          own=$(sed "1,/^$heading\$/d" AGENTS.md | sed '/./,$!d')
+        elif [ -s AGENTS.md ]; then
+          if [ -e AGENTS.old.md ]; then
+            echo "AGENTS.old.md already exists. Finish reviewing it and delete it, then run this again." >&2
+            exit 1
+          fi
+          cat AGENTS.md > AGENTS.old.md
+          rm AGENTS.md
+          echo "Your old AGENTS.md is now AGENTS.old.md. Review it before moving its text into AGENTS.md: see Install in .standards/README.md."
+        fi
+        cp $template AGENTS.md
+        if [ -n "$own" ]; then printf '\n%s\n' "$own" >> AGENTS.md; fi
+
+  agents:check:
+    desc: Fail if AGENTS.md has lost the standard's text, an old one is unreviewed, or a CLAUDE.md could hide or contradict it
+    preconditions:
+      - sh: "[ ! -e AGENTS.old.md ]"
+        msg: "AGENTS.old.md hasn't been reviewed. Move what's specific to this project under the heading in AGENTS.md, remove what conflicts with the standard, then delete the file. See Install in .standards/README.md."
+      - sh: head -c $(wc -c < .standards/templates/AGENTS.md) AGENTS.md | cmp -s - .standards/templates/AGENTS.md
+        msg: "AGENTS.md is missing or has lost the standard's text. Move anything you wrote above the heading '## This project's own rules' below it, then run task agents."
+      - sh: "[ ! -e CLAUDE.md ] || [ CLAUDE.md -ef AGENTS.md ] || [ \"$(cat CLAUDE.md)\" = '@AGENTS.md' ]"
+        msg: "CLAUDE.md can hide or contradict AGENTS.md. Move its text under the heading in AGENTS.md, then delete CLAUDE.md or leave only the line @AGENTS.md in it."
+
+  lint:build:
+    desc: Build golangci-lint with the standard's plugin compiled in
+    dir: .standards/lint
+    cmds:
+      - go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0 custom
+    status:
+      - test -x bin/golangci-lint
+      - test -z "$(find .custom-gcl.yml requiredtag -newer bin/golangci-lint)"
+
+  lint:config:
+    desc: Write .golangci.yml from the standard, with this project's module path
+    cmds:
+      - sed "s#MODULE#$(go list -m)#g" .standards/lint/.golangci.yml > .golangci.yml
+
+  lint:config:check:
+    desc: Fail if .golangci.yml has been edited or is out of date
+    preconditions:
+      - sh: sed "s#MODULE#$(go list -m)#g" .standards/lint/.golangci.yml | cmp -s - .golangci.yml
+        msg: ".golangci.yml differs from the standard. Run task lint:config. To change a lint rule, change it in the standard."
+
+  lint:
+    desc: Static analysis (read-only)
+    deps: [lint:build]
+    cmds: ["{{.LINT}} run"]
+
+  fmt:
+    desc: Rewrite formatting and apply the linters' automatic fixes
+    deps: [lint:build]
+    cmds:
+      - "{{.LINT}} fmt"
+      - cmd: "{{.LINT}} run --fix"
+        ignore_error: true
+
+  standards:drift:
+    desc: Fail if .standards/ differs from the pinned version
+    cmds:
+      - git fetch -q "{{.STANDARDS_URL}}" "refs/tags/$(cat .standards-version)"
+      - |
+        test "$(git rev-parse 'FETCH_HEAD^{tree}')" = "$(git rev-parse 'HEAD:.standards')" || {
+          echo ".standards/ differs from version $(cat .standards-version). Undo the edit. To change a rule, change it in the standard." >&2
+          exit 1
+        }
+
+  standards:check:fast:
+    desc: What the standard requires, without the network. A project's check:fast depends on this
+    deps: [agents:check, lint:config:check, lint]
+
+  standards:check:
+    desc: Everything the standard requires. A project's check depends on this
+    deps: [standards:check:fast, standards:drift]

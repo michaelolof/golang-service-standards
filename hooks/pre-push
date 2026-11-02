@@ -1,0 +1,4 @@
+#!/bin/sh
+# Stops a push while the fast checks fail, whoever is pushing.
+# Set up once per clone: task setup
+exec task check:fast
