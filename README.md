@@ -321,7 +321,7 @@ Following one cancel request through those files:
 | [01 · Project layout](01-project-layout.md) | Repo root, `cmd` and lifecycle, the `internal/` layers and import direction, package and file naming, package docs, config, Taskfile | LAY-1…14 |
 | [02 · Style and naming](02-style-and-naming.md) | Formatting, **the naming table**, function and struct shape, comments, declaration order, modern Go, literals, **code that reads as a story**, what lint can and can't check | STY-1…9 |
 | [03 · Domain and abstractions](03-domain-and-abstractions.md) | Typed IDs, money, time, invariants, enums and state machines; interfaces, services, adapters, generics, smells | DOM-1…7, ABS-1…9 |
-| [04 · Errors](04-errors.md) | Stamps, the errx subset, wrapping, kinds, boundary translation, HTTP and worker mapping, logging once, panics | ERR-1…12 |
+| [04 · Errors](04-errors.md) | Stamps, which errx functions to use, wrapping, kinds, boundary translation, HTTP and worker mapping, logging once, panics | ERR-1…12 |
 | [05 · Transport and runtime](05-transport-and-runtime.md) | gofi handlers (following gofi's GUIDELINES.md), routes, middleware, OpenAPI, moving to gofi v0.10.4; jobs; context; concurrency; logging; telemetry | HTTP-1…7, JOB-1…4, CTX-1…4, CON-1…3, LOG-1…4, OBS-1…3 |
 | [06 · Persistence](06-persistence.md) | Repository shape, transactions, queries, concurrency control, idempotency, cursors, caching, migrations, database-specific rules | DATA-1…12 |
 | [07 · Testing](07-testing.md) | Test kinds and tags, what to test where, assertions, fakes, tables, parallelism, helpers, per-layer recipes, determinism, meta tests | TEST-1…13 |
