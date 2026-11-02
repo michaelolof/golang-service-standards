@@ -191,7 +191,7 @@ linters:
         - {pattern: '^(fmt\.Errorf|errors\.New)$', msg: "[errs] create errors with errx (ERR-12)"}
         - pattern: '^errx\.(Wrapf|WrapKindf|Is|As|Join|Unwrap|Contains|Must|Panic|UseLogger|ParseStampedError)$'
           pkg: '^github\.com/michaelolof/errx$'
-          msg: "[errx] outside the sanctioned errx surface (ERR-2)"
+          msg: "[errx] see ERR-2 for what to use instead"
         - {pattern: '^panic$', msg: "[panic] return an error (ERR-11)"}
         - {pattern: '^logger\.(Infof|Warnf|Errorf|InfoT|WarnT|ErrorT|Wrapf?|WrapErrorf?)$', msg: "[logger] legacy logger API (LOG-1)"}
         - {pattern: '^slog\.(Debug|Info|Warn|Error|Log|LogAttrs)(Context)?$', msg: "[slog] log through internal/foundation/logger: logger.Info(stamp, ctx, event, ...) (LOG-1)"}

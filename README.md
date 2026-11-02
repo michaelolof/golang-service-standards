@@ -14,25 +14,25 @@ The libraries [`errx`](https://github.com/michaelolof/errx), [`gofi`](https://gi
 
 This isn't a package you download. A project keeps its own copy of [this repo](https://github.com/michaelolof/golang-service-standards) in a folder called `.standards/`, pinned to a version, and that copy brings the rules and the checks with it.
 
-If your projects can't reach GitHub, mirror this repo to any git host, and use that address in the steps below.
+If your projects can't reach GitHub, mirror this repo to any git host, and use that address in the steps below and as `STANDARDS_URL` in `Taskfile.yml`.
 
 ### 1. Add it to a project
 
-Start at the project's root. The project needs a `go.mod`, at least one Go package, and everything committed, because `git subtree` refuses to run over uncommitted files. These commands use `v0.1.0`. If there's a newer [tag](https://github.com/michaelolof/golang-service-standards/tags), use that instead.
+Start at the project's root. The project needs a `go.mod`, at least one Go package, and everything committed, because `git subtree` refuses to run over uncommitted files. These commands use `v0.1.1`. If there's a newer [tag](https://github.com/michaelolof/golang-service-standards/tags), use that instead.
 
 ```sh
-git subtree add --prefix=.standards https://github.com/michaelolof/golang-service-standards.git v0.1.0 --squash
-echo v0.1.0 > .standards-version
+git subtree add --prefix=.standards https://github.com/michaelolof/golang-service-standards.git v0.1.1 --squash
+echo v0.1.1 > .standards-version
 cp .standards/templates/Taskfile.yml Taskfile.yml
 ```
 
-Open `Taskfile.yml` and set `STANDARDS_URL` to `https://github.com/michaelolof/golang-service-standards.git`. If the project already has a Taskfile, don't overwrite it. Copy the `vars`, the `includes`, `check` and `check:fast` into it from the template.
+If the project already has a Taskfile, don't overwrite it. Copy the `vars`, the `includes`, `check` and `check:fast` into it from the template.
 
 Then finish the setup:
 
 ```sh
 task setup
-git add -A && git commit -m "Pin standards v0.1.0"
+git add -A && git commit -m "Pin standards v0.1.1"
 task check
 ```
 
@@ -74,8 +74,8 @@ orders/
 orders/
 ├── .gitignore
 ├── .golangci.yml        # new: the lint config, with your module path filled in. Don't edit it.
-├── .standards/          # new: this repo at v0.1.0: rules, lint config, hooks, templates. Don't edit it.
-├── .standards-version   # new: contains v0.1.0
+├── .standards/          # new: this repo at v0.1.1: rules, lint config, hooks, templates. Don't edit it.
+├── .standards-version   # new: contains v0.1.1
 ├── AGENTS.md            # new: what agents read. Your own rules go under its last heading.
 ├── README.md
 ├── Taskfile.yml         # new: the tasks below. Add your own here.
@@ -91,7 +91,7 @@ orders/
 
 Your code, `go.mod`, `README.md` and `.gitignore` don't change, and `go list ./...` still lists only your own packages. A few things change that the tree doesn't show:
 
-- **Git history** gains three commits: two from `git subtree`, and your "Pin standards v0.1.0".
+- **Git history** gains three commits: two from `git subtree`, and your "Pin standards v0.1.1".
 - **On each machine,** `task setup` turns on the git hook, and the first `task lint` builds the linter into `.standards/lint/bin/`, which git ignores.
 - **New commands** come with it:
 
@@ -321,7 +321,7 @@ Following one cancel request through those files:
 | [01 · Project layout](01-project-layout.md) | Repo root, `cmd` and lifecycle, the `internal/` layers and import direction, package and file naming, package docs, config, Taskfile | LAY-1…14 |
 | [02 · Style and naming](02-style-and-naming.md) | Formatting, **the naming table**, function and struct shape, comments, declaration order, modern Go, literals, **code that reads as a story**, what lint can and can't check | STY-1…9 |
 | [03 · Domain and abstractions](03-domain-and-abstractions.md) | Typed IDs, money, time, invariants, enums and state machines; interfaces, services, adapters, generics, smells | DOM-1…7, ABS-1…9 |
-| [04 · Errors](04-errors.md) | Stamps, the errx subset, wrapping, kinds, boundary translation, HTTP and worker mapping, logging once, panics | ERR-1…12 |
+| [04 · Errors](04-errors.md) | Stamps, which errx functions to use, wrapping, kinds, boundary translation, HTTP and worker mapping, logging once, panics | ERR-1…12 |
 | [05 · Transport and runtime](05-transport-and-runtime.md) | gofi handlers (following gofi's GUIDELINES.md), routes, middleware, OpenAPI, moving to gofi v0.10.4; jobs; context; concurrency; logging; telemetry | HTTP-1…7, JOB-1…4, CTX-1…4, CON-1…3, LOG-1…4, OBS-1…3 |
 | [06 · Persistence](06-persistence.md) | Repository shape, transactions, queries, concurrency control, idempotency, cursors, caching, migrations, database-specific rules | DATA-1…12 |
 | [07 · Testing](07-testing.md) | Test kinds and tags, what to test where, assertions, fakes, tables, parallelism, helpers, per-layer recipes, determinism, meta tests | TEST-1…13 |

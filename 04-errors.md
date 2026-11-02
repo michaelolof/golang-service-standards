@@ -23,7 +23,7 @@ Application errors are created everywhere. A transport's errors are created only
 | ID | Rule | Enforced by |
 |---|---|---|
 | ERR-1 | Every errx, httperr and log call takes a stamp: the Unix time in milliseconds, as a plain literal, read from a clock. A stamp has no meaning, so it's never ordered, numbered or versioned. | the compiler, review |
-| ERR-2 | Use only `New`, `Newf`, `NewKind`, `NewKindf`, `Wrap`, `WrapKind` and `IsKind` from errx. For the rest, use stdlib `errors.Is/As/Join`. | forbidigo |
+| ERR-2 | Create, wrap and classify errors with errx, and inspect them with stdlib `errors.Is/As/Join`. Only the errx functions ERR-2 names as forbidden are banned. | forbidigo |
 | ERR-3 | Wrap every error you return from a call exactly once with `errx.Wrap(stamp, err)`. | wrapcheck |
 | ERR-4 | Create errors with `New*`, and add a kind only if someone branches on it. Messages are lowercase, describe the condition, use `key=%q`, and contain no PII. | forbidigo, review |
 | ERR-5 | Application kinds: generic ones in `foundation/errkinds`, capability ones beside their owner with a `<pkg>_` prefix, and only if a caller branches on them. Each transport has its own error domain with its own kinds. | arch test |
@@ -95,26 +95,36 @@ return errx.NewKind(1793611082554, errkinds.ErrKindInvalidInput, "amount must be
 
 **Enforced by** the compiler. Only a literal can be passed to an unexported type, so a variable, a call or a missing stamp doesn't compile.
 
-## ERR-2 · The errx subset
+## ERR-2 · Which errx functions to use
 
 **Rule.**
 
-| Allowed | Use for |
+| Use | For |
 |---|---|
 | `errx.New`, `errx.Newf` | Creating an error nobody branches on |
+| `errx.Kind` | Defining a kind |
 | `errx.NewKind`, `errx.NewKindf` | Creating an error a caller branches on |
 | `errx.Wrap` | Adding a stamp to an error you return |
 | `errx.WrapKind` | Classifying at a boundary while keeping the cause |
 | `errx.IsKind` | Branching on a kind |
+| `errx.Cause` | Reading the deepest error in a chain. The standard library has no function for this, because `errors.Unwrap` goes one level. |
+| `errx.CauseMessage` | Getting the deepest error's own text, with no stamps |
 | `errx.DataKind`, `errx.FindData` | Only when a transport reads the payload |
-| stdlib `errors.Is`, `errors.As`, `errors.Join` | Everything else |
-
-**Forbidden:**
-- `Wrapf`, `WrapKindf`;
-- `errx.Is`, `errx.As`, `errx.Join`, `errx.Unwrap`;
-- `Contains`, `Must`, `Panic`, `UseLogger`, `ParseStampedError`.
+| stdlib `errors.Is`, `errors.As`, `errors.Join` | Inspecting and combining errors |
 
 `NewBuild` and `BuildFrom` are allowed only inside `http/httperr`.
+
+**Forbidden.** Only these are banned:
+
+| Forbidden | Why | Use instead |
+|---|---|---|
+| `Wrapf`, `WrapKindf` | They rewrite a shared error's message, and they put the wrapped error in the first `%` (results below) | `errx.Wrap`, `errx.WrapKind` |
+| `errx.Is` | It also matches on text, so two different errors with the same message count as equal | `errors.Is` |
+| `errx.As`, `errx.Join`, `errx.Unwrap` | Each one only calls the standard library function, so there's no reason to have two ways | `errors.As`, `errors.Join`, `errors.Unwrap` |
+| `Contains` | It matches on text, so rewording an error changes what the code does | `errors.Is`, `errors.As`, `errx.IsKind` |
+| `Must`, `Panic` | They panic (ERR-11) | Return the error |
+| `UseLogger` | It has no effect: errx stores the logger and never reads it | The `logger` package (LOG-1) |
+| `ParseStampedError` | It rebuilds an error from its text, so `errors.Is` no longer finds the original | Keep the error value |
 
 **Why.** Tested on errx v0.5.5:
 
@@ -129,6 +139,26 @@ What these results mean:
 - **`errx.Is` compares text when `errors.Is` says no.** That's a design choice. Use `errors.Is`, so the code has one way to do this.
 
 [Known errx bugs](#known-errx-bugs), at the end of this document, lists this bug and what a fix would lift.
+
+`Cause` and `CauseMessage` are allowed, but each has one thing to watch for. Tested on errx v0.5.5:
+
+```text
+err := errx.Wrap(1793662430954, errx.WrapKind(1793662430949, kind, notFound))
+
+err.Error()                                → "[ts 1793662430954]; [ts 1793662430949 kind missing]; not found"
+errx.IsKind(err, kind)                     → true
+errx.IsKind(errx.Cause(err), kind)         → false
+errx.Wrap(1793662430959, errx.Cause(err))    → "[ts 1793662430959]; not found"
+
+own := errx.Wrap(1793662430969, errx.NewKind(1793662430964, kind, "amount must be positive"))
+
+own.Error()                                → "[ts 1793662430969]; [ts 1793662430964 kind missing] amount must be positive"
+errx.CauseMessage(own)                     → "amount must be positive"
+errx.CauseMessage(err)                     → "not found"
+```
+
+- **`Cause` returns only the deepest error.** The stamps and kinds above it are gone, as the sample shows. So don't return it, wrap it or branch on it. To branch, use `errors.Is`, `errors.As` or `errx.IsKind`, which search the whole chain, including joined errors, where `Cause` stops at the join.
+- **`CauseMessage` returns the deepest error's text, whoever wrote it.** That's what makes it right for `UseIssueAsMsg` (ERR-7), because `err.Error()` would send stamps to the client. It's also why ERR-7's condition applies: send it to a client only if that text was written for clients. On a joined error, it returns the joined text with its stamps.
 
 ## ERR-3 · Wrap once, stamp only
 

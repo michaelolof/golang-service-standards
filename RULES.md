@@ -61,7 +61,7 @@ Generated from the "Rules at a glance" tables. Don't edit it by hand. Each docum
 | ID | Rule |
 |---|---|
 | ERR-1 | Every errx, httperr and log call takes a stamp: the Unix time in milliseconds, as a plain literal, read from a clock. A stamp has no meaning, so it's never ordered, numbered or versioned. |
-| ERR-2 | Use only `New`, `Newf`, `NewKind`, `NewKindf`, `Wrap`, `WrapKind` and `IsKind` from errx. For the rest, use stdlib `errors.Is/As/Join`. |
+| ERR-2 | Create, wrap and classify errors with errx, and inspect them with stdlib `errors.Is/As/Join`. Only the errx functions ERR-2 names as forbidden are banned. |
 | ERR-3 | Wrap every error you return from a call exactly once with `errx.Wrap(stamp, err)`. |
 | ERR-4 | Create errors with `New*`, and add a kind only if someone branches on it. Messages are lowercase, describe the condition, use `key=%q`, and contain no PII. |
 | ERR-5 | Application kinds: generic ones in `foundation/errkinds`, capability ones beside their owner with a `<pkg>_` prefix, and only if a caller branches on them. Each transport has its own error domain with its own kinds. |
