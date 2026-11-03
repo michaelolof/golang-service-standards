@@ -1,6 +1,6 @@
 # 10 · Adoption: how a project takes on this standard
 
-This says how any project consumes the standard, and what makes it mandatory for the agents and people working there. It needs only git, Go and [Task](https://taskfile.dev). It doesn't depend on a particular git host, CI product, operating system or coding agent.
+This says how any project consumes the standard, and what makes it mandatory for the agents and people working there. A project needs only git, Go and [Task](https://taskfile.dev), and agents also need [Playwright MCP](https://github.com/microsoft/playwright-mcp), to check completion documents in a browser (COL-9). It doesn't depend on a particular git host, CI product, operating system or coding agent.
 
 The standard lives in [its own git repo](https://github.com/michaelolof/golang-service-standards), with version tags. A project keeps a pinned copy of it. Three things then make it mandatory:
 1. **The agent is told.** `AGENTS.md` loads the rules at the start of every session.

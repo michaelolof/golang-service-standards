@@ -23,6 +23,13 @@ These haven't been decided, and nothing enforces them yet.
 | Can a `CLAUDE.md` hold its own text? | No. It's only the line `@AGENTS.md`, or a symlink to `AGENTS.md`, so there's one set of instructions (ADO-3). |
 | How strict are we on existing projects? | Fix everything first, leaving existing tests as they are (ADO-6, TEST-14). |
 | Who owns the standard? | Michael Olofinjana (COL-13). |
+| What's the difference between `completed` and `done`? | `completed` means fully implemented, tested, verified when possible, and meeting the requirement, and the agent marks it. `done` only comes from the engineer, by an explicit instruction, after reviewing a completion document. Neither depends on merging (COL-8, COL-9, COL-10). |
+| How much work goes for review at once? | A whole workstream, implemented end to end, unless the engineer explicitly asks for part of it. A small change with no plan or task list entry gets a completion document for visibility, with no `done` step (COL-5, COL-9, COL-19). |
+| Where do completion documents live, and in what format? | `completion/<topic>.html`, beside `implementation/`. Each is a standalone HTML file, because HTML presents and explains work better. Nothing depends on one, so the engineer can delete it at any time (COL-9, COL-18). |
+| Why do agents need Playwright MCP? | To check that a completion document displays properly before sending it. Playwright MCP blocks `file:` URLs by default, so the agent serves the folder locally first (COL-9). |
+| Can a task depend on one further down the list? | No. A task can only depend on tasks above it. A dependency in another workstream that isn't `done` yet is a warning, not a blocker (COL-15). |
+| Do implementation plans list their sub-tasks? | Yes. Every plan has a table in the task list's format, with temporary IDs that exist only in that plan (COL-17). |
+| Who deletes implementation plans? | Only the engineer, on an explicit instruction. A finished plan and its completion document stay in the folder (COL-18). |
 
 ## Layout
 

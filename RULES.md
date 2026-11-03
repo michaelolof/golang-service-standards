@@ -175,21 +175,24 @@ Generated from the "Rules at a glance" tables. Don't edit it by hand. Each docum
 | ID | Rule |
 |---|---|
 | COL-1 | Instructions are applied in a fixed priority order. General best practice never overrides the standard. |
-| COL-2 | Every task starts with a brief that says what "done" means. |
+| COL-2 | Every task starts with a brief whose "Completed when" lines are its acceptance criteria. |
 | COL-3 | The agent reads before it writes, then lists ambiguities and proposed cases. The engineer resolves them. |
 | COL-4 | Acceptance tests come first, and the implementer is never their only author. |
 | COL-5 | Task-list work, and any work that adds a package, type, interface, service or table, starts with a plan the engineer approves. |
 | COL-6 | Implement in small steps, each ending green. Change only what the task needs. |
 | COL-7 | Refine against the standard with tests green, then run `task check`. |
-| COL-8 | Report in binary terms: done or not done, with the evidence. Never "should work". |
-| COL-9 | Explain until the engineer understands the change. Understanding is part of done. |
-| COL-10 | Review covers four concerns: works, solves the real problem, fits, reads well. |
+| COL-8 | `completed` means fully implemented, tested, verified when possible, and meeting the requirement. The agent marks it without asking, and reports completed or not completed, with the evidence. Never "should work". |
+| COL-9 | When a workstream's last task is `completed`, the agent writes a completion document straight away, without being asked: a standalone HTML file in `completion/`, checked in a browser, covering everything it did, why, the impact, code sources and many scenarios. A small change with no plan or task list entry gets one too. It makes the case for the work honestly, and it must not lie. |
+| COL-10 | Only the engineer marks a task or a workstream `done`, by an explicit instruction after reviewing it. Review covers four concerns: works, solves the real problem, fits, reads well. |
 | COL-11 | Stop rules: two failed attempts, growing scope, a request that breaks the standard, or pressure to skip a step. |
 | COL-12 | Autonomy is granted per task type and earned through measured results. |
 | COL-13 | Every repeated correction becomes a rule, a check, or a canonical example. |
 | COL-14 | Everything written for a person uses clear, approachable language, with a practical example and a code source. |
-| COL-15 | Each project keeps one living `tasklist.md`: a tracker table grouped into phases that each deliver something useful, linked to a section per task. |
-| COL-16 | Each task being worked on is detailed in a short-lived implementation plan in `implementation/`, which ends when its tasks do. |
+| COL-15 | Each project keeps one living `tasklist.md`: a tracker table grouped into phases that each deliver something useful, linked to a section per task. A task can only depend on tasks above it. A dependency in another workstream that isn't `done` yet is a warning, not a blocker. |
+| COL-16 | Each task being worked on is detailed in an implementation plan in `implementation/`, which the engineer approves before work starts. All the work one plan covers is one workstream. |
+| COL-17 | Every implementation plan has a table of all the sub-tasks needed to finish it end to end, in the task list's format, with temporary IDs that exist only in that plan. |
+| COL-18 | Only the engineer deletes an implementation plan or completion document. A finished plan stays in the folder until the engineer explicitly says to delete it. |
+| COL-19 | A workstream goes to the engineer whole, implemented end to end. Never ask for `done` on part of it unless the engineer asked for that. If an item must be `done` before another in the same workstream or phase, ask first. |
 
 ## [10 · Adoption: how a project takes on this standard](10-adoption.md)
 

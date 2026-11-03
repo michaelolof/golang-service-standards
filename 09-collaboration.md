@@ -1,6 +1,6 @@
 # 09 · Collaboration: how engineers and agents work on a task
 
-The other documents say what the code looks like. This one says how a task gets from a request to merged code when an engineer works with a coding agent or with a colleague. The same steps apply to both.
+The other documents say what the code looks like. This one says how a task gets from a request to `done` when an engineer works with a coding agent or with a colleague. The same steps apply to both.
 
 It draws on three sources:
 - what already works in a service's docs: an `AGENTS.md` that requires plain language, an instructions file that puts sources in priority order, and a guide that has the agent keep explaining until the engineer understands the change;
@@ -8,8 +8,8 @@ It draws on three sources:
 - the review corrections that started this standard. Each one is a step that was skipped.
 
 **Roles.**
-- **The engineer** owns the problem and every decision: what "done" means, which trade-off to take, whether a new service or abstraction is allowed. The engineer reviews, approves and merges.
-- **The agent** does the work inside the standard. It asks when something is ambiguous, says no when a request breaks the standard, and reports the facts.
+- **The engineer** is the person who owns the work. They own the problem and every decision: what the work must achieve, which trade-off to take, whether a new service or abstraction is allowed. They review the work, decide whether it's `done`, and merge. Only they can mark work `done` or delete an implementation plan. An agent is never the engineer.
+- **The agent** does the work inside the standard. It asks when something is ambiguous, says no when a request breaks the standard, and reports the facts. It can mark its work `completed`, never `done`.
 - **The reviewer** is a person, optionally helped by a second agent that starts with fresh context.
 
 ## Rules at a glance
@@ -17,21 +17,24 @@ It draws on three sources:
 | ID | Rule |
 |---|---|
 | COL-1 | Instructions are applied in a fixed priority order. General best practice never overrides the standard. |
-| COL-2 | Every task starts with a brief that says what "done" means. |
+| COL-2 | Every task starts with a brief whose "Completed when" lines are its acceptance criteria. |
 | COL-3 | The agent reads before it writes, then lists ambiguities and proposed cases. The engineer resolves them. |
 | COL-4 | Acceptance tests come first, and the implementer is never their only author. |
 | COL-5 | Task-list work, and any work that adds a package, type, interface, service or table, starts with a plan the engineer approves. |
 | COL-6 | Implement in small steps, each ending green. Change only what the task needs. |
 | COL-7 | Refine against the standard with tests green, then run `task check`. |
-| COL-8 | Report in binary terms: done or not done, with the evidence. Never "should work". |
-| COL-9 | Explain until the engineer understands the change. Understanding is part of done. |
-| COL-10 | Review covers four concerns: works, solves the real problem, fits, reads well. |
+| COL-8 | `completed` means fully implemented, tested, verified when possible, and meeting the requirement. The agent marks it without asking, and reports completed or not completed, with the evidence. Never "should work". |
+| COL-9 | When a workstream's last task is `completed`, the agent writes a completion document straight away, without being asked: a standalone HTML file in `completion/`, checked in a browser, covering everything it did, why, the impact, code sources and many scenarios. A small change with no plan or task list entry gets one too. It makes the case for the work honestly, and it must not lie. |
+| COL-10 | Only the engineer marks a task or a workstream `done`, by an explicit instruction after reviewing it. Review covers four concerns: works, solves the real problem, fits, reads well. |
 | COL-11 | Stop rules: two failed attempts, growing scope, a request that breaks the standard, or pressure to skip a step. |
 | COL-12 | Autonomy is granted per task type and earned through measured results. |
 | COL-13 | Every repeated correction becomes a rule, a check, or a canonical example. |
 | COL-14 | Everything written for a person uses clear, approachable language, with a practical example and a code source. |
-| COL-15 | Each project keeps one living `tasklist.md`: a tracker table grouped into phases that each deliver something useful, linked to a section per task. |
-| COL-16 | Each task being worked on is detailed in a short-lived implementation plan in `implementation/`, which ends when its tasks do. |
+| COL-15 | Each project keeps one living `tasklist.md`: a tracker table grouped into phases that each deliver something useful, linked to a section per task. A task can only depend on tasks above it. A dependency in another workstream that isn't `done` yet is a warning, not a blocker. |
+| COL-16 | Each task being worked on is detailed in an implementation plan in `implementation/`, which the engineer approves before work starts. All the work one plan covers is one workstream. |
+| COL-17 | Every implementation plan has a table of all the sub-tasks needed to finish it end to end, in the task list's format, with temporary IDs that exist only in that plan. |
+| COL-18 | Only the engineer deletes an implementation plan or completion document. A finished plan stays in the folder until the engineer explicitly says to delete it. |
+| COL-19 | A workstream goes to the engineer whole, implemented end to end. Never ask for `done` on part of it unless the engineer asked for that. If an item must be `done` before another in the same workstream or phase, ask first. |
 
 ---
 
@@ -59,19 +62,19 @@ General best practice never overrides a rule here. If the current request confli
 **Rule.** The engineer starts every task with a brief. A short one is fine; a missing one is not. If the task is on the task list, the brief can just name it, because its section already gives the goal and the acceptance criteria (COL-15).
 
 ```text
-Task:        Admins can cancel a transfer that hasn't reached the provider.
-Done when:   - INITIATED, no provider reference → CANCELLED, operation abandoned, event queued
-             - already CANCELLED → returned unchanged, no second event
-             - has a provider reference → invalid_input
-             - PENDING or later → invalid_input
-             - task check passes
-Priority:    correctness, then API shape. Performance is not a concern here.
-Read:        DOM-5, DOM-7, DATA-4, HTTP-3; features/transfers.md
-Terms:       transfer, provider reference, operation (domain/doc.go glossary)
-Don't touch: the custody adapter; the transfers table schema
+Task:           Admins can cancel a transfer that hasn't reached the provider.
+Completed when: - INITIATED, no provider reference → CANCELLED, operation abandoned, event queued
+                - already CANCELLED → returned unchanged, no second event
+                - has a provider reference → invalid_input
+                - PENDING or later → invalid_input
+                - task check passes
+Priority:       correctness, then API shape. Performance is not a concern here.
+Read:           DOM-5, DOM-7, DATA-4, HTTP-3; features/transfers.md
+Terms:          transfer, provider reference, operation (domain/doc.go glossary)
+Don't touch:    the custody adapter; the transfers table schema
 ```
 
-**Why.** "Done when" is the acceptance criteria. Without it the agent decides what done means, and its version is always "it compiles and the tests I wrote pass" (*The Clean Coder* ch 7: acceptance tests are how you "remove ambiguity" and agree on done).
+**Why.** "Completed when" is the acceptance criteria. Without it the agent decides for itself when the work is finished, and its version is always "it compiles and the tests I wrote pass" (*The Clean Coder* ch 7: acceptance tests are how you "remove ambiguity" and agree on when work is finished).
 
 ## COL-3 · Read, then ask
 
@@ -87,7 +90,7 @@ The engineer answers before any code is written. An ambiguity is a decision that
 ## COL-4 · Acceptance tests first
 
 **Rule.**
-- The cases in "Done when" become tests before the implementation: core tests with fakes for business rules, and integration tests for queries (TEST-1).
+- The cases in "Completed when" become tests before the implementation: core tests with fakes for business rules, and integration tests for queries (TEST-1).
 - The engineer writes them, approves the agent's draft, or has a separate spec agent write them. **The agent that implements is never their only author.**
 - The implementer shows the tests failing for the right reason before it starts.
 - The implementer may not change an approved test to make it pass. If a test looks wrong, it stops and says which test and why (COL-11).
@@ -99,9 +102,9 @@ The engineer answers before any code is written. An ambiguity is a decision that
 **Rule.** If the work is a task on the task list, or adds a package, type, interface, service, table, job kind or endpoint, the agent first writes an implementation plan (COL-16) and the engineer approves it. Where the work adds structure, the plan also covers:
 - the files and layers it will touch;
 - each new abstraction, with the test it passes (03: hides a dependency, enforces an invariant, or has two real users);
-- the order of the steps, and the point where it is cheapest to change course.
+- the order of the sub-tasks (COL-17), and the point where it is cheapest to change course.
 
-A new service always needs explicit approval (HTTP-3). Small changes inside existing structure that aren't on the task list need no plan.
+A new service always needs explicit approval (HTTP-3). Small changes inside existing structure that aren't on the task list need no plan, but they still need a completion document (COL-9).
 
 **Why.** Structure is expensive to undo and easy for an agent to add. Most "this abstraction isn't needed" review comments come from here.
 
@@ -124,42 +127,197 @@ A new service always needs explicit approval (HTTP-3). Small changes inside exis
 
 **Why.** "Getting it working and making it clean are two different activities" (Clean Code ch 14). Doing them in that order means cleaning never breaks behaviour.
 
-## COL-8 · Report in binary terms
+## COL-8 · `completed`, and reporting in binary terms
 
-**Rule.** The report says done or not done, and shows the evidence:
+**Rule.** A task is `completed` when all four of these are true:
+
+- **Fully implemented.** Everything the task asked for is there, with nothing left for later.
+- **Tested.** Tests cover the change, and they and `task check` pass.
+- **Verified, when possible.** Someone ran the change and saw it work, outside the tests. For example, they started the service and called the new endpoint. If that wasn't possible, the report says what couldn't be checked and why.
+- **Meets the requirement.** Every acceptance criterion holds. If one is impossible or can't be met, the completion document says so clearly (COL-9).
+
+The agent marks work `completed` on its own, without asking. That's as far as it can take the work, because only the engineer can make it `done` (COL-10). Neither status depends on merging, which stays the engineer's step.
+
+The report says completed or not completed, and shows the evidence:
 
 ```text
-Done.
+Completed.
 - task check passes (lint, arch tests, 412 unit tests, 38 integration tests in repository/transfers).
 - TestService_Cancel: 4 of 4 cases pass; cases unchanged from the brief.
+- Ran it: on a local instance, cancelling an INITIATED transfer returned CANCELLED and queued one event.
 - Changed: domain/transfer.go (Cancel), repository/transfers/transitions.go (CancelInitiated: one CTE),
   http/api/transfers/cancel.go (CancelTransferHandler).
-Not done:
+For your attention:
 - The SQL guard and the domain rule both check "no provider reference". The duplication is deliberate:
   the SQL guard protects against concurrent requests. Say if you want it written differently.
 Deviations: none.
+Warnings: none.
 ```
 
-Never "should work", "I believe this fixes it" or "tests should pass". If validation couldn't run, say exactly why, and that the task is therefore not done.
+The report always has a "Warnings" line, even if it says "none". A dependency in another workstream that isn't `done` yet goes there (COL-15).
 
-**Why.** *The Clean Coder* calls reporting work as done when it isn't "false delivery" (ch 4), and asks for "the language of commitment": say what you will do, mean it, and do it (ch 3). An agent's report is only useful if it can be trusted without being re-checked.
+Never "should work", "I believe this fixes it" or "tests should pass". If the tests or `task check` couldn't run, say exactly why, and that the task is therefore not `completed`.
 
-## COL-9 · Explain until it's understood
+**Why.** *The Clean Coder* calls reporting work as finished when it isn't "false delivery" (ch 4), and asks for "the language of commitment": say what you will do, mean it, and do it (ch 3). An agent's report is only useful if it can be trusted without being re-checked.
 
-**Rule.** Code nobody understands is not done, even if it passes. After the report, the agent explains, in the language COL-14 sets out:
-1. **the problem:** why it existed, and the options;
-2. **the solution:** why this one, the design decisions, the edge cases;
-3. **the impact:** what else this change affects.
+## COL-9 · The completion document
 
-For non-trivial changes, the engineer restates their understanding and the agent fills the gaps.
+**Rule.** When the last task in a workstream becomes `completed` (COL-19), the agent writes a completion document straight away, without being asked: `completion/<topic>.html`, in a `completion/` folder beside `implementation/`, linked from the plan's header. Then it sends the document to the engineer. The agent's work on the workstream isn't over until it has. The engineer decides from it whether the work is ready for `done`, or needs more work, a correction or a revamp (COL-10).
 
-**Why.** "It is not good enough that it passes all the tests. You must *know*" (Clean Code G21). The engineer will own this code, debug it at night and explain it to the next person.
+A small change with no plan or task list entry gets a completion document too, for visibility, as short as the change allows. The report (COL-8) links to it. It has no status and no `done` step, because there's nothing to track it in.
 
-## COL-10 · Review
+It covers everything that was implemented, not just the highlights. It's unambiguous and easy to read and follow, in the language COL-14 requires. It says all of this, laid out however communicates it best:
 
-**Rule.**
-- A person approves every merge. Nothing merges unreviewed.
-- The review covers four concerns, in this order:
+| Section | What it says |
+|---|---|
+| Header | The tasks it covers (linked), the plan, the status, and where to review the change (a branch or PR). A small change with no plan or task list entry only needs the last of these. |
+| Summary | What works now that didn't before, and whether every acceptance criterion is met. Say any bad news here, not just further down. |
+| Acceptance criteria | Every criterion, whether it's met, and the evidence. |
+| Criteria not met | For each one: what's missing, why it's impossible or can't be met, what was tried, what it means for users, and what the engineer needs to decide. Write "None" if they're all met. Not having got to it isn't a reason: finish it first. |
+| Warnings | Anything the engineer should know before deciding. Always check for a dependency in another workstream that isn't `done` yet (COL-15): name the task, and say what would need redoing if its review changes it. Write "None" if there are none. |
+| What was done | Everything that changed, with links to the code. |
+| What led to it | The problem, what was found in the code, and how that led to this implementation. |
+| Justification | Each decision, the options not chosen and why, and anything that differs from the plan. |
+| Impact | What changes, and for whom: callers, data, other code, operations. What stays the same. Breaking changes, risks and known limits. |
+| Scenarios | Lots of them. See below. |
+| How to check it | The commands to run, so the engineer can see it work for themselves. |
+| Sources | Links or references to the code, tests and docs behind the claims above. |
+
+**Make the case for the work, and don't lie.** Write it as if you're selling the implementation to the engineer, with full honesty and transparency. Selling means explaining the work well, never making it look better than it is:
+- Every claim is true, and says how far it was checked: tested, read the code or reported (COL-14).
+- Problems, shortcuts and limits are stated as plainly as the successes. Leaving one out is a lie, even if every sentence in the document is true.
+- If something wasn't tested, say so.
+
+**Scenarios.** Write one for each acceptance criterion, then more for failures, edge cases and anything the engineer might ask "what happens if…?" about. Each one tells the story in order: the situation, what happened before the change, what happens now, why it matters, where it is in the code, and how far it was checked.
+
+**The format.** A completion document is HTML because HTML presents and explains work better than Markdown: side-by-side before and after, diagrams, colour for what passed and what didn't, and interaction where it helps. That's the only reason, so use what helps the reader and nothing more.
+- It stands alone, like a Markdown file: one `.html` file with its styles and any scripts inside it. It needs no build step, shares no files with other documents, and loads nothing from the internet.
+- It can be as long as it needs to be. If the work reads better in more than one file, use more than one. Each still stands alone.
+- Nothing depends on it, so the engineer can delete it whenever it's out of date or no longer needed (COL-18).
+- Bad news is never collapsed. The summary, the acceptance criteria and the criteria not met are always visible.
+- Code sources are written out as text, `path:line` (COL-14), because a browser can't open a local file at a line.
+
+**Check it in a browser.** Before sending it, open it with [Playwright MCP](https://github.com/microsoft/playwright-mcp), which this standard requires. Playwright MCP blocks `file:` URLs by default (tested on v0.0.82), so serve the folder first, with this or any other local server:
+
+```sh
+python3 -m http.server 8321 --bind 127.0.0.1 --directory completion
+```
+
+Open `http://127.0.0.1:8321/<topic>.html`, then do all of these. Playwright's page snapshot isn't enough, because it can't show the layout.
+- Take a full-page screenshot and look at it. Don't give it a file name, so it goes to Playwright's output folder and not into the project.
+- Read the browser console for errors.
+- Try anything interactive.
+
+Fix what's wrong and check again, then stop the server. If Playwright MCP isn't available, say so in the report, because the document hasn't been checked.
+
+Here's a cut-down example. It's invented, based on `TRF-016` (COL-15). A real one has every section and many more scenarios.
+
+````html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Completion: new asset and one-coin acme wallets</title>
+<link rel="icon" href="data:,">
+<style>
+  body { font: 16px/1.6 system-ui, sans-serif; max-width: 60rem; margin: 2rem auto; padding: 0 1rem; color: #1f2328; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #d0d7de; padding: .4rem .6rem; text-align: left; vertical-align: top; }
+  code, pre { font-family: ui-monospace, monospace; font-size: .9em; }
+  pre { background: #f6f8fa; padding: .75rem; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .met { color: #116329; font-weight: 600; }
+  .unmet { color: #a40e26; font-weight: 600; }
+  .warning { border-left: 4px solid #a40e26; background: #fff5f5; padding: .5rem 1rem; }
+  .compare { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; }
+</style>
+</head>
+<body>
+<h1>Completion: new asset and one-coin <code>acme</code> wallets</h1>
+<p><strong>Task:</strong> <a href="../tasklist.md#trf-016">TRF-016</a>.
+   <strong>Plan:</strong> <a href="../implementation/new-asset-and-acme.md">new-asset-and-acme.md</a>.
+   <strong>Status:</strong> <code>completed</code>. <strong>Review:</strong> branch <code>new-asset-and-acme</code>.</p>
+
+<h2>Summary</h2>
+<p>Customers can now hold the new asset on <code>acme</code>, and each <code>acme</code> wallet holds exactly one coin.
+   Four of the five acceptance criteria are fully met. The fifth passes in tests, but I couldn't check it against the
+   real <code>acme</code>, because it has no test environment.</p>
+
+<h2>Acceptance criteria</h2>
+<table>
+  <tr><th>Criterion</th><th>Result</th><th>Evidence</th></tr>
+  <tr><td>Creating an <code>acme</code> wallet with two assets returns a 400 with a readable message.</td>
+      <td class="met">Met</td><td><code>TestCreateWalletHandler_TwoAssetsReturns400</code>; ran it on a local instance</td></tr>
+  <tr><td><code>acme</code> accounts are created in the wallet's coin, and nothing sends <code>USD</code>.</td>
+      <td class="unmet">Not fully met</td><td>Passes against a fake <code>acme</code> only: see below</td></tr>
+</table>
+
+<h2>Criteria not met</h2>
+<div class="warning">
+  <p><strong><code>acme</code> accounts in the wallet's coin weren't checked against the real provider.</strong>
+     <code>acme</code> has no test environment, so the only evidence is a fake that I built from its docs. It records
+     every request, and none of them sends <code>USD</code>. If the docs are wrong, the first real wallet fails to
+     create and the customer gets an error. You need to decide whether that's acceptable, or whether to create one
+     real wallet to confirm it first.</p>
+</div>
+
+<h2>Scenarios</h2>
+<h3>A customer asks for an <code>acme</code> wallet with two coins</h3>
+<div class="compare">
+  <div><h4>Before</h4><pre>POST /api/v1/wallets
+{"supported_assets": ["USDC", "USDT"], "network": "BASE"}
+
+201: the wallet is created with both coins,
+which acme can no longer hold</pre></div>
+  <div><h4>Now</h4><pre>POST /api/v1/wallets
+{"supported_assets": ["USDC", "USDT"], "network": "BASE"}
+
+400: "supported_assets must contain exactly one asset
+for this provider; got 2. Create one wallet per asset"</pre></div>
+</div>
+<p>The check runs after a provider is selected, so other providers still accept several coins.</p>
+<p>Where: <code>internal/core/wallet/routing.go</code> (<code>ValidateWalletAssetCount</code>).
+   Checked: tested (<code>TestCreateWalletHandler_TwoAssetsReturns400</code>), and ran it on a local instance.</p>
+</body>
+</html>
+````
+
+**Why.** The engineer is being asked to accept work they didn't write. A report says that the checks passed. It doesn't say what was built, why, or what it affects, and without that the engineer has to work it all out from the diff. An agent also writes confidently whether or not it's right, so the document is only useful if every claim can be trusted and checked.
+
+**How it's checked.** The engineer reads it, and these go back:
+- a known problem left out or played down;
+- a claim with no source, or that doesn't say how far it was checked;
+- something implemented that the document doesn't mention;
+- anything the engineer has to ask the meaning of;
+- a page that's broken, or that hides bad news in a collapsed section;
+- too few scenarios to decide from.
+
+## COL-10 · Review, and moving work to `done`
+
+**Rule.** Only the engineer can mark a task or a whole workstream `done`, and only by an explicit instruction after reviewing it. No agent, second reviewer or passing check can do it.
+
+1. The agent finishes the whole workstream (COL-19) and marks its tasks `completed`.
+2. Straight away, without being asked, the agent writes the completion document (COL-9) and sends it to the engineer.
+3. The engineer reviews the document and the change, and the agent answers any questions.
+4. The engineer decides what happens next:
+
+| The engineer decides | What happens |
+|---|---|
+| It's ready | They say so explicitly, and the agent moves the tasks and the plan to `done`. |
+| It needs more work or a correction | The affected tasks go back to `inprogress`. The agent fixes them, marks them `completed` again, and updates the completion document, saying what changed since the last review. |
+| It needs a revamp | The affected tasks go back to `inprogress`. The plan is rewritten and approved again (COL-5) before the work restarts. |
+
+Only a clear instruction moves work to `done`:
+
+| The engineer says or does | Move it to `done`? |
+|---|---|
+| "Mark TRF-016 done." | Yes, that task. |
+| "Mark this workstream done." | Yes, every task in it. |
+| "Looks good." or "Nice work." | No. If you think they mean `done`, ask. |
+| Approves or merges the PR, without saying so | No. |
+
+**What the review covers.**
+- Four concerns, in this order:
   1. **Works:** the acceptance tests cover the brief.
   2. **Solves the real problem:** not just the literal request.
   3. **Fits:** follows the standard, with no new structure that wasn't approved.
@@ -168,6 +326,10 @@ For non-trivial changes, the engineer restates their understanding and the agent
 - Edits to approved acceptance tests are flagged and discussed, never waved through.
 - The writing is reviewed too. If the reviewer has to ask what a report, PR description or comment means, or where it is in the code, it goes back (COL-14).
 - A second agent with fresh context may review first. It gets the diff and the brief, not the implementer's reasoning, so its read isn't anchored on it.
+
+**Merging.** A person approves every merge, and nothing merges unreviewed. Merging and `done` are separate decisions.
+
+**Why.** Finishing work and accepting it are different jobs. Whoever wrote the work can check it against the criteria, but only the person who owns it can say it solves their problem.
 
 ## COL-11 · Stop rules
 
@@ -191,6 +353,8 @@ For non-trivial changes, the engineer restates their understanding and the agent
 
 A task type moves up a level when its recent PRs merged with few review corrections. It moves down after a correction that a rule should have prevented.
 
+At every level, `completed` is as far as an agent can take work. Only the engineer makes it `done` (COL-10).
+
 ## COL-13 · Keep the standard alive
 
 **Rule.**
@@ -206,7 +370,7 @@ A task type moves up a level when its recent PRs merged with few review correcti
 
 ## COL-14 · Clear language, practical examples, code sources
 
-**Rule.** Everything written for a person uses clear, approachable language, shows a practical example, and says where in the code it comes from. That covers proposals, plans, questions, reports, explanations, findings, PR descriptions and review comments, whether an agent or an engineer wrote them.
+**Rule.** Everything written for a person uses clear, approachable language, shows a practical example, and says where in the code it comes from. That covers proposals, plans, questions, reports, completion documents, explanations, findings, PR descriptions and review comments, whether an agent or an engineer wrote them.
 
 Write for a smart colleague who is new to this code. If they have to read something twice, or ask what it means, it isn't finished.
 
@@ -234,9 +398,10 @@ Write for a smart colleague who is new to this code. If they have to read someth
 | Writing | Must say |
 |---|---|
 | Proposal or plan (COL-5) | The problem, today's code and the new code, what it costs, the options not chosen and why, and what you need from the reader |
-| Explanation (COL-9) | What happens, step by step and in order, then why it matters, then where it is in the code |
+| Explanation | What happens, step by step and in order, then why it matters, then where it is in the code |
 | Finding or bug | What goes wrong, what triggers it, what should happen, whether real code can hit it, where it is, and how far you checked |
-| Report (COL-8) | Done or not done, the evidence, and the files changed |
+| Report (COL-8) | Completed or not completed, the evidence, and the files changed |
+| Completion document (COL-9) | Everything that was implemented, why, the impact, and many scenarios, with every claim true and checkable |
 | Question (COL-3) | The question, why the answer changes the work, and your proposed answer |
 
 ### Finding
@@ -381,7 +546,7 @@ Project B  Phase 3: One-shot event, end to end
 
 Shared work, such as a queue, an outbox or a provider adapter, goes in the first phase that needs it. A new project's first phase can be the smallest service that starts and answers a request.
 
-To test a phase, ask: "What can someone do when this is done that they couldn't do before?" If the answer is "nothing yet", it isn't a phase.
+To test a phase, ask: "What can someone do when this phase is finished that they couldn't do before?" If the answer is "nothing yet", it isn't a phase.
 
 ### The tracker
 
@@ -394,8 +559,8 @@ The tracker comes first in the file, with these columns:
 | Phase | The phase number and name, such as `3 · Wallets`. Rows stay in phase order. |
 | Scope | Where the work lands: `API`, `Admin`, `Web`, and anything else the project has, such as `Worker` or `SDK`. Usually one scope per task, so each can be planned and finished on its own. |
 | Priority | `P0`: the project can't launch without it. `P1`: first work after launch. `P2`: useful, with no date. |
-| Dependencies | The IDs of the tasks that must be `done` first, or `None`. |
-| Status | One of the six statuses below. |
+| Dependencies | The IDs of the tasks above it that must be finished first, or `None`. |
+| Status | One of the seven statuses below. |
 
 For example:
 
@@ -410,15 +575,20 @@ For example:
 | [TRF-017](#trf-017) | Send funds through the Product API | 4 · Outflows | API | P0 | TRF-015 | `todo` |
 ```
 
+**Dependencies only point up the list.** A newer task, further down the list, can depend on older tasks above it. An older task never depends on a newer one. If a task turns out to need one below it, the order is wrong, so move the needed task up.
+
+A dependency must be `completed` before work starts on the task that needs it. If it's in another workstream (COL-19) and isn't `done` yet, that's a warning, not a blocker. The agent carries on, and flags it under "Warnings" in its report (COL-8) and completion document (COL-9), saying what would need redoing if the review changes that work.
+
 ### Statuses
 
-There are six, and no others. Anything else that needs saying goes in the task's section.
+There are seven, and no others. Anything else that needs saying goes in the task's section.
 
 | Status | Meaning | Also write in the task's section |
 |---|---|---|
 | `todo` | Not started. | |
 | `inprogress` | Someone is working on it now. Work that's built but not yet tested stays here (COL-8). | A link to the implementation plan |
-| `done` | Every acceptance criterion is met, with evidence, and the work is merged. | |
+| `completed` | Fully implemented, tested, verified when possible, and meets the requirement (COL-8). The agent marks this on its own, without asking. | |
+| `done` | The engineer reviewed the work and explicitly said it's done (COL-10). Nobody else can set this. | |
 | `blocked` | It can't continue until something outside the task happens. | What's blocking it, and who can clear it |
 | `deferred` | Valid work, put off on purpose. | What would restart it |
 | `cancelled` | No longer needed. The row stays, so its ID isn't reused. | Why, and who decided |
@@ -430,9 +600,9 @@ Each task has one section, with these fields. Add more if the task needs them.
 | Field | What it says |
 |---|---|
 | Problem statement | What's wrong or missing today, and who it affects. |
-| Goal | What will be true when the task is done. |
+| Goal | What will be true when the task is finished. |
 | Requirements | What the work must include, and any limits on how it's done. |
-| Acceptance criteria | Statements someone can check. They're the "Done when" of the brief (COL-2), and they become the tests (COL-4). |
+| Acceptance criteria | Statements someone can check. They're the "Completed when" of the brief (COL-2), and they become the tests (COL-4). |
 | Breaking changes | What callers must change, or "None". |
 | Implementation plan | A link to the plan, added when work starts (COL-16). |
 
@@ -474,7 +644,7 @@ The `<a id>` line keeps the tracker's link working if the title changes.
 
 - Change the status when the work changes, not at the end of a phase.
 - New work goes on the list when it's found, as `todo`, in the phase that needs it.
-- The engineer decides what's on the list: adding, cancelling or deferring a task, and changing a priority or an acceptance criterion. The agent proposes these and may move a task's status as the work goes.
+- The engineer decides what's on the list: adding, cancelling or deferring a task, and changing a priority or an acceptance criterion. The agent proposes these and may move a task's status as the work goes, up to `completed`. Only the engineer's instruction moves it to `done` (COL-10).
 - Don't keep counts by hand. Anyone who needs a count can get it from the table.
 
 **Why.** One list means nobody has to piece the project together from chat and memory. Phases by feature mean that stopping early still leaves something that works. Keeping each fact in one place stops the list contradicting itself, which real task lists do (tested: a script compared each tracker with its sections):
@@ -484,41 +654,99 @@ The `<a id>` line keeps the tracker's link working if the title changes.
 - The hand-kept summary says 14 tasks are `done` and 7 are `code-complete`. The table has 26 `done` and no `code-complete`.
 - The ID says phase 3, but the task is in phase 2. The phase number in the ID is wrong for 33 of one tracker's 40 rows.
 
-Without one format, each project's list drifts its own way. Across three codebases, the file had two names (`tasklist.md`, `PROJECT_TASKS.md`), the plans folder had two spellings (`implementation/`, `implementations/`), each list added statuses beyond the six (such as `revalidate` and `code-complete`), and only one tracker linked to its sections.
+Without one format, each project's list drifts its own way. Across three codebases, the file had two names (`tasklist.md`, `PROJECT_TASKS.md`), the plans folder had two spellings (`implementation/`, `implementations/`), each list added its own statuses (such as `revalidate` and `code-complete`), and only one tracker linked to its sections.
 
-**How it's checked.** A person checks it in review, using the phase test above. A script could check the mechanical parts: every row has a section, every dependency exists, and every status is one of the six. That script isn't built yet.
+**How it's checked.** A person checks it in review, using the phase test above. A script could check the mechanical parts: every row has a section, every dependency exists and is above its task, and every status is one of the seven. That script isn't built yet.
 
 ## COL-16 · The implementation plan
 
-**Rule.** Each task being worked on is detailed in an implementation plan: a Markdown file in the `implementation/` folder, beside `tasklist.md`. It says what the work is, how it will be done and why, with clear examples of what the issue is and what needs to change, in the language COL-14 requires. A plan can cover one task or several, as the engineer instructs. The engineer approves it before implementation starts (COL-5).
+**Rule.** Each task being worked on is detailed in an implementation plan: a Markdown file in the `implementation/` folder, beside `tasklist.md`. It says what the work is, how it will be done and why, with clear examples of what the issue is and what needs to change, in the language COL-14 requires. A plan can cover one task or several, as the engineer instructs, and all the work it covers is one workstream (COL-19). The engineer approves it before implementation starts (COL-5).
 
-Plans are kept up to date too, but they're short-lived. A plan lasts as long as its tasks do.
+Plans are kept up to date until the engineer marks their work `done`. After that, a plan is a record of finished work, and it stays until the engineer deletes it (COL-18).
 
 | | Task list | Implementation plan |
 |---|---|---|
 | Answers | What needs doing, and in what order? | How and why will this task get done? |
 | Covers | The whole project, or a large part of it | One or more tasks |
-| Lasts | As long as the project | Until its tasks are done |
+| Lasts | As long as the project | Until the engineer deletes it |
 | Where | `tasklist.md` | `implementation/<topic>.md` |
 
 ### What a plan contains
 
 | Section | What it says |
 |---|---|
-| Header | The tasks it covers (linked), its status, and the repos it touches. |
+| Header | The tasks it covers (linked), its status, the repos it touches, and a link to the completion document once there is one (COL-9). |
 | Summary | What's being done and why, in a few sentences. |
+| Sub-task table | Every sub-task needed to finish the plan end to end (COL-17). |
 | The issue today | How the code behaves now, with code sources and an example of what goes wrong. |
 | What changes and what doesn't | The behaviour that changes, and what callers can rely on staying the same. |
 | Decisions | Each choice: the options, the one taken and why. Open ones are the engineer's to answer (COL-3). |
-| Steps | The work in order, each step small enough to end with tests passing (COL-6). Each step says why, what changes, which tests, and when it's done. |
+| Sub-task sections | One section per row of the table, in the same order (COL-17). |
 | Risks | What could go wrong, and what we'd do about it. |
 | Out of scope | What this plan won't do, and where that work goes instead. |
-| Definition of done | Each step's "done when" line, tied back to the task's acceptance criteria. Link to the criteria rather than copying them. |
+| Completion criteria | Each sub-task's "Completed when" line, tied back to the task's acceptance criteria. Link to the criteria rather than copying them. |
 
-Here's one step from a plan:
+### Keeping it up to date
+
+- If the approach changes, change the plan first. If that changes what the engineer approved, stop and ask (COL-11).
+- The task's section links to the plan, and the plan links back to its tasks.
+
+### When the work is `done`
+
+A plan describes the work, not the system. Once the engineer marks the work `done`, the code and the feature docs are the truth.
+
+1. Move anything that must last into the permanent docs: behaviour into the feature docs, and vendor facts into the vendor doc.
+2. Set the status in the plan's header to `done`. A plan marked `done` describes past work, so don't follow it as instructions.
+3. Leave the plan in the folder, and leave the link in the task's section (COL-18).
+
+A plan that covers several tasks is finished when the engineer has marked the last of them `done`.
+
+**Why.** Keeping the detail in the plan keeps the task list short enough to scan. The plan also shows the engineer the approach before any code exists, which is the cheapest point to change course. Marking a finished plan matters because a plan left in the folder can look like current instructions, and agents follow what they find.
+
+**How it's checked.** A person checks it in review. These go back:
+- a task marked `inprogress` with no linked plan;
+- a plan whose tasks are all `done`, but whose header doesn't say so;
+- a plan that fails COL-14's three tests.
+
+## COL-17 · The plan's sub-task table
+
+**Rule.** Every implementation plan has one table of all the sub-tasks needed to finish it end to end: the code, the tests, any migration, the docs, and the final check that it all works. The table comes straight after the plan's summary. It uses the same format as the task list's tracker (COL-15): the same columns, the same seven statuses, rows in phase order, and each row linked to a section further down the plan.
+
+Here's the table from the plan for `TRF-016`:
+
+```markdown
+| Sub-task ID | Title | Phase | Scope | Priority | Dependencies | Status |
+|---|---|---|---|---|---|---|
+| [ST-1](#st-1) | Map the new asset to `acme`'s code | 1 · New asset | API | P0 | None | `completed` |
+| [ST-2](#st-2) | Accept the new asset on `ETH` only | 1 · New asset | API | P0 | ST-1 | `completed` |
+| [ST-3](#st-3) | Enforce one asset per `acme` wallet | 2 · One-coin wallets | API | P0 | None | `inprogress` |
+| [ST-4](#st-4) | Create `acme` accounts in the wallet's coin | 2 · One-coin wallets | API | P0 | ST-3 | `todo` |
+| [ST-5](#st-5) | Check every acceptance criterion on a running service | 3 · End to end | API | P0 | ST-2, ST-4 | `todo` |
+```
+
+Title and Scope mean what they mean on the task list. The others work like this in a plan:
+
+| Column | In a plan |
+|---|---|
+| Sub-task ID | A short, temporary ID such as `ST-3`, linked to its section. It stays the same while the plan is in use, and another plan can use the same ID. |
+| Phase | A stage of this plan, such as `2 · One-coin wallets`. If the plan covers several tasks, use one phase per task, named after the task: `1 · TRF-016`. |
+| Priority | The priority of the task it belongs to. |
+| Dependencies | The IDs of the sub-tasks above it that must be `completed` first, or `None`. As on the task list, a row never depends on one below it. |
+| Status | One of the seven statuses. `completed` means COL-8's four points, measured against the sub-task's own "Completed when" line. A sub-task only moves to `done` along with its task, on the engineer's instruction (COL-10). For `blocked`, `deferred` and `cancelled`, say why in the sub-task's section. |
+
+**The IDs are temporary.** They only mean something inside the plan. Don't use them in `tasklist.md`, code, tests, commit messages or permanent docs, because they'd point at nothing once the plan is deleted. Say what the work is instead (COL-14). If a sub-task turns out to be a task of its own, propose adding it to the task list (COL-15).
+
+To test the table, ask: "If every row were `completed`, would every acceptance criterion of the plan's tasks be met?" If not, something is missing from it.
+
+### The sub-task section
+
+Each row has one section, in the same order as the table. It says why the work is needed, what changes, which tests, and when it's completed, and it's small enough to end with tests passing (COL-6). Like a task's section, it doesn't repeat what's in the table.
+
+Here's the section for `ST-3`:
 
 ````markdown
-### Step 3: Enforce one asset per `acme` wallet
+<a id="st-3"></a>
+### ST-3 · Enforce one asset per `acme` wallet
 
 **Why.** A wallet has one address and one provider account. An `acme` account now holds
 one coin, so an `acme` wallet can only hold one coin.
@@ -557,28 +785,61 @@ one coin, so an `acme` wallet can only hold one coin.
 - Add: enabling a different coin returns a 409.
 - Add: deleting the asset returns a 409, and the asset row is still there.
 
-**Done when.** The new tests pass, and `task test` passes.
+**Completed when.** The new tests pass, and `task test` passes.
 ````
 
 ### Keeping it up to date
 
-- Mark each step as it finishes, and record what changed from the plan.
-- If the approach changes, change the plan first. If that changes what the engineer approved, stop and ask (COL-11).
-- The task's section links to the plan, and the plan links back to its tasks.
+- Change a sub-task's status when the work changes, and record what changed from the plan in its section.
+- New work goes in the table as `todo` when it's found. If it changes what the engineer approved, stop and ask (COL-11).
+- Only the engineer defers or cancels a sub-task, as with tasks (COL-15).
+- A task can't be `completed` while any of its sub-tasks is `todo`, `inprogress` or `blocked`.
 
-### When the task is done
+**Why.** A list of steps in prose doesn't show how far the work has got, what's waiting on what, or whether anything was left out. A table shows all three at a glance, and using the task list's format means there's only one format to learn. The IDs are temporary because sub-tasks only matter while the plan is in use. Keeping them off the task list keeps that list short enough to scan.
 
-A plan describes the work, not the system. Once the work is merged, the code and the feature docs are the truth.
+**How it's checked.** A person checks it in review. No script checks it yet. These go back:
+- a plan with no table, or with different columns or statuses;
+- a row with no section, or a section with no row;
+- a table that fails the test above;
+- a task marked `completed` with a sub-task still `todo`, `inprogress` or `blocked`;
+- a sub-task ID in code, a commit message or a permanent doc.
 
-1. Move anything that must last into the permanent docs: behaviour into the feature docs, and vendor facts into the vendor doc.
-2. Delete the plan. Git history keeps it.
-3. Remove the link from the task's section.
+## COL-18 · Only the engineer deletes a plan
 
-A plan that covers several tasks ends when the last of them is done.
+**Rule.** Never delete an implementation plan unless the engineer has explicitly told you to delete it. This holds even when all its tasks are `done`, and however old it is. The same goes for a completion document. The engineer can delete one whenever it's out of date or no longer needed, and nothing depends on it, so a link left behind does no harm. Moving it out of the folder or emptying it counts as deleting it. Don't add a script, hook or CI job that deletes plans either.
 
-**Why.** Keeping the detail in the plan keeps the task list short enough to scan. The plan also shows the engineer the approach before any code exists, which is the cheapest point to change course. Deleting it afterwards matters because a finished plan left in the folder looks like current instructions, and agents follow what they find.
+| The engineer says | Delete the plan? |
+|---|---|
+| "Delete the plan for TRF-016." | Yes, that plan only. |
+| "Delete every finished plan." | Yes, the plans marked `done`. |
+| "Mark TRF-016 done." | No. Marking work `done` doesn't delete its plan. |
+| "Clean up the repo." | No. If you think they mean the plans, ask. |
 
-**How it's checked.** A person checks it in review. These go back:
-- a task marked `inprogress` with no linked plan;
-- a task marked `done` whose plan is still in the folder;
-- a plan that fails COL-14's three tests.
+When the engineer does say to delete a plan, delete the file and remove the links to it.
+
+**Why.** A plan holds things the code can't show, such as the options not chosen and why, and the engineer decides when those are no longer needed. Deleting can also lose a plan for good. Git history only keeps a plan that was committed, and a squash merge drops a plan that was added and deleted on the same branch.
+
+**How it's checked.** A person checks it in review: a change that deletes a plan goes back, unless the engineer asked for it. No script can tell whether they asked.
+
+## COL-19 · A workstream goes to the engineer whole
+
+**Rule.** A workstream is all the work one implementation plan covers: one task or several. A small change with no plan or task list entry (COL-5) isn't a workstream. It gets a completion document for visibility (COL-9), and it has no `done` step. Everything in it is implemented end to end and `completed` before the agent sends it to the engineer. Don't implement it in bits and ask for each bit to be marked `done`.
+
+There are two exceptions:
+- **The engineer explicitly asks** to review a part first.
+- **The agent thinks an item must be reviewed and `done` before another** in the same workstream or phase. That should be rare. It stops and asks before going on, saying which item, why it can't wait, and what could go wrong if it does.
+
+This only limits asking for `done`. Questions and problems don't wait for the end: an ambiguity (COL-3) or a stop rule (COL-11) is still raised as soon as it comes up.
+
+For a plan that covers `TRF-016` and `TRF-017`:
+
+| Where the work is | What the agent does |
+|---|---|
+| `TRF-016` is `completed`, and `TRF-017` hasn't started | Keeps going. It doesn't send `TRF-016` for review. |
+| `TRF-016` fails the same way after two attempts | Stops and reports it (COL-11). That isn't asking for `done`. |
+| Both are `completed` | Writes the completion document for both straight away, without being asked, and sends it (COL-9). |
+| The engineer says "Let me review `TRF-016` first." | Sends `TRF-016`, with a completion document for it. |
+
+**Why.** Part of a workstream can't show that the whole thing works end to end, so the engineer would be judging it without the evidence that matters most. Each extra review also costs their time, and work built on a part they later change has to be redone.
+
+**How it's checked.** The engineer checks it: a request to mark part of a workstream `done`, with no instruction to do so, goes back.
