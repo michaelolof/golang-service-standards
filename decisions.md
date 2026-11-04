@@ -59,6 +59,7 @@ These haven't been decided, and nothing enforces them yet.
 | How are required struct fields marked? | With a struct tag on the field, never a comment. Fields stay optional unless tagged. The `requiredtag` plugin checks literals (STY-3). |
 | Which tags mark a field as required? | Each project configures its own. The standard's config uses `validate:required` and `lint:required`. |
 | Which naming conventions? | `Store` and `Repo`, `<Op>Args` and `<Op>Result`, and UPPER_SNAKE enum values. |
+| How does a logged error say who it affects? | With `subject_id` and `subject_ref`. The HTTP encoder defaults to the signed-in caller, and decorators name anyone else. Where the code can't know, it stays empty (ERR-13). |
 | Are existing enum wire values frozen? | Not on a `greenfield` scope. On an `existing` scope, renaming one is a breaking change (STY-2, DOM-6, COL-15). |
 
 ## Domain

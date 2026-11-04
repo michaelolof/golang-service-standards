@@ -72,6 +72,7 @@ Generated from the "Rules at a glance" tables. Don't edit it by hand. Each docum
 | ERR-10 | Discard close errors on readers. Join close errors on writers. Don't `Join` on paths that will be classified. |
 | ERR-11 | No `panic` outside tests and `recover` roots. A recovered panic becomes an error with the panic's type and stack. |
 | ERR-12 | `fmt.Errorf` and `errors.New` are allowed only in tests and in standalone library modules. |
+| ERR-13 | Every logged error says who it affects, wherever the code can know, as `subject_id` and `subject_ref`. The encoder defaults to the signed-in caller, and decorators name anyone else. IDs must be verified, never personal data, and never set on a shared error. |
 
 ## [05 · HTTP, background work, context, concurrency, logging and telemetry](05-transport-and-runtime.md)
 

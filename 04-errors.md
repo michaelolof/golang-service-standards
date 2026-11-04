@@ -34,6 +34,7 @@ Application errors are created everywhere. A transport's errors are created only
 | ERR-10 | Discard close errors on readers. Join close errors on writers. Don't `Join` on paths that will be classified. | errcheck, review |
 | ERR-11 | No `panic` outside tests and `recover` roots. A recovered panic becomes an error with the panic's type and stack. | forbidigo, arch test |
 | ERR-12 | `fmt.Errorf` and `errors.New` are allowed only in tests and in standalone library modules. | forbidigo |
+| ERR-13 | Every logged error says who it affects, wherever the code can know, as `subject_id` and `subject_ref`. The encoder defaults to the signed-in caller, and decorators name anyone else. IDs must be verified, never personal data, and never set on a shared error. | shared test, review |
 
 ---
 
@@ -289,7 +290,7 @@ if stderrors.As(err, &pgErr) && pgErr.Code == "23505" {
 ## ERR-7 · One HTTP mapper, one response body
 
 **Rule.**
-- **Handlers.** A handler returns `httperr.Map(stamp, err)` for any error from `core`. It may add a client message with `.WithMsg(...)`.
+- **Handlers.** A handler returns `httperr.Map(stamp, err)` for any error from `core`. It may add a client message with `.WithMsg(...)`, and it names the party affected with `.WithSubject(...)` when that isn't the caller (ERR-13).
 - **The mapper.** `Map` is the only switch from kind to HTTP error. It checks the most specific kind first. Unknown errors become `UNHANDLED_SERVER_ERROR`, carrying only the stamp.
 - **The response body** is a typed struct, encoded with `encoding/json`.
 - **Detecting an existing `HTTPError`** uses `errors.As`, not a type assertion. A type assertion fails once the error is wrapped.
@@ -383,7 +384,7 @@ The canonical mapping is in [05 · JOB-2](05-transport-and-runtime.md#job-2--the
   - the worker runner;
   - goroutine roots;
   - best-effort or post-commit paths that deliberately swallow an error.
-- A log line has a constant event name and the error under the key `error`, as the error value (`"error", err`), so errx's structured value is kept (LOG-2).
+- A log line has a constant event name and the error under the key `error`, as the error value (`"error", err`), so errx's structured value is kept (LOG-2). It says who the error affects, when the code can know (ERR-13).
 
 **Why.**
 - Central logging means an error is logged once, where it stops travelling.
@@ -471,6 +472,130 @@ defer func() {
 - Everywhere else, use errx.
 
 **Enforced by** forbidigo `^fmt\.Errorf$` and `^errors\.New$`, excluding `_test.go` and `pkg/`.
+
+## ERR-13 · Say who an error affects
+
+**Rule.** Every logged error says who it affects, wherever the code can know. When someone reports a problem, this is how an engineer finds their errors: by searching for `subject_id`.
+
+| Log key | Set with | What it holds |
+|---|---|---|
+| `subject_id` | `WithSubjectID(id)` | The stable internal ID of the party affected, such as a tenant, organisation, user or project. It must be verified: it comes from a checked credential or a record the code loaded. |
+| `subject_ref` | `WithSubjectRef(ref)` | The reference people outside the service use, such as the client's own reference for a request, or an ID the caller sent that nothing has checked yet. |
+
+`WithSubject(id, ref)` sets both, and an empty argument changes nothing. The subject is for logs only, so it never goes in the response. It's never an email, phone number, name or token, even as a ref (SEC-8).
+
+**What to do depends on what the code knows when the error happens:**
+
+| The situation | What to do |
+|---|---|
+| A signed-in caller acting on their own data | Nothing in the handler. The encoder uses the caller as the subject. |
+| Staff or a service acting on someone else's data | Decorate each error once the code knows whose data it is. The affected party replaces the caller. |
+| No sign-in, but the code has identified a record, such as an inbound webhook, or a password reset after its token is found | Decorate each error from that point on. |
+| A job, consumer or goroutine root | Put the same two keys in the log call, from the job's payload. |
+| Nothing is known yet: a missing or bad credential, an unmatched route, an oversized body, a login for an unknown account, a health check, startup | Leave it empty. Don't write a placeholder such as `unknown`. |
+
+"Wherever the code can know" means what's already in scope. Never run an extra query just to fill in a subject, because that adds work and a new way to fail while handling an error.
+
+**Decorate only an error created in this request.** The decorators change the error in place, so a package-level error is shared by every request. Create a new error instead.
+
+**Do.** The encoder is the one place that logs an HTTP error (ERR-9), so one change here covers every signed-in route. A subject set on the error wins:
+
+```go
+// internal/http/httperr/encoder.go
+// Encoder writes the response and logs the error. A subject set on the error
+// wins. Without one, subject says who the request belongs to.
+func Encoder(subject func(c gofi.Context) (id, ref string)) func(err error, c gofi.Context) {
+	return func(err error, c gofi.Context) {
+		encoded := EncodeError(err)
+		if encoded.SubjectID == "" && encoded.SubjectRef == "" {
+			encoded.SubjectID, encoded.SubjectRef = subject(c)
+		}
+
+		c.Writer().Header().Set("Content-Type", "application/json")
+		_ = c.SendBytes(encoded.StatusCode, encoded.Body)
+
+		if encoded.StatusCode >= 500 {
+			logger.Error(1793829773381, c.Context(), "http.error", encoded.LogAttrs(err)...)
+			return
+		}
+		logger.Warn(1793829773305, c.Context(), "http.error", encoded.LogAttrs(err)...)
+	}
+}
+```
+
+The project supplies the function that reads its principal. The auth middleware has put the principal on the request context (CTX-2), and the encoder can read it there. A request rejected before that point has no principal, so the subject stays empty:
+
+```go
+// internal/http/authn/subject.go
+// CallerSubject says who the request belongs to. Before auth succeeds there's
+// no principal, so it returns nothing.
+func CallerSubject(c gofi.Context) (id, ref string) {
+	principal, ok := PrincipalFrom(c.Context())
+	if !ok {
+		return "", ""
+	}
+	return principal.UserID.String(), ""
+}
+```
+
+```go
+// internal/http/routes/routes.go
+r.UseErrorHandler(httperr.Encoder(authn.CallerSubject))
+```
+
+**Do.** Staff freeze a tenant's wallet. The caller is a staff member, but the person affected is the tenant:
+
+```go
+if err := wallets.Freeze(ctx, wallet.ID); err != nil {
+	return httperr.Map(1793829836716, err).WithSubject(wallet.TenantID.String(), wallet.ClientRef)
+}
+```
+
+**Do.** A job root has no `httperr`, so it logs the same keys:
+
+```go
+logger.Error(1793829836658, ctx, "wallet.sync.failed", "subject_id", tenantID.String(), "subject_ref", wallet.ClientRef, "error", err)
+```
+
+**Don't.** An ID nobody has checked goes in `subject_id`. A caller could send another customer's ID, and whoever debugs from that log would be misled:
+
+```go
+return httperr.Wrap(1793829836541, httperr.BadRequestErr, err).WithSubjectID(req.ProjectID)
+```
+
+**Do.** Until it's checked, it's a ref:
+
+```go
+return httperr.Wrap(1793829836427, httperr.BadRequestErr, err).WithSubjectRef(req.ProjectID)
+```
+
+**Don't.** An email in the log:
+
+```go
+return httperr.Wrap(1793829836486, httperr.UnauthorizedErr, err).WithSubjectRef(req.Email)
+```
+
+**Don't.** Decorate a shared error. Here, one tenant's ID stays on the error and gets logged for later requests from other tenants (tested):
+
+```go
+var errInvalidCursor = httperr.Wrap(1793829836593, httperr.BadRequestErr, errx.New(1793829836807, "invalid cursor"))
+
+return errInvalidCursor.WithSubjectID(wallet.TenantID.String())
+```
+
+**Do.** Create one for each request:
+
+```go
+return httperr.Wrap(1793829836767, httperr.BadRequestErr, err).WithSubjectID(wallet.TenantID.String())
+```
+
+**Why.** A user says "my transfer failed at about 3pm". Without a subject, an engineer has only a time and a path to search with, across every customer's errors. With one, they can search for that customer and see exactly what happened to them. Putting the default in the encoder means nobody has to remember it on each error, and a decorator is only needed where the person affected isn't the caller.
+
+The encoder can read the principal because gofi runs the error handler on the same request. On gofi v0.10.5, it saw a principal set with `SetRequestContext` by a route group's middleware, including after a recovered panic. It saw none when that middleware rejected the request, or when no route matched (tested).
+
+**Enforced by:**
+- a shared test on the encoder: a signed-in route logs the caller, a decorator replaces the caller, a rejected request logs no subject, and the response body never contains one;
+- review for everything else, because no linter can tell what the code knew when the error happened. A handler that returns an error without a subject, after loading the record that names the affected party, goes back.
 
 ---
 

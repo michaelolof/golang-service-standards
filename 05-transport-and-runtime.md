@@ -210,7 +210,7 @@ A project that adds tracing (OBS-1) puts its middleware right after RequestID.
 
 ```go
 // internal/http/routes/routes.go
-r.UseErrorHandler(httperr.Encoder())
+r.UseErrorHandler(httperr.Encoder(authn.CallerSubject))
 r.Use(recoverMW, requestIDMW, securityMW, accessLogMW, timeoutMW)
 
 r.Route("/api/v1/transfers", func(r gofi.Router) {
