@@ -35,7 +35,7 @@ task setup
 git add -A && git commit -m "Pin standards v0.1.0"
 ```
 
-[templates/Taskfile.yml](templates/Taskfile.yml) has `check` and `check:fast`, because the hooks and CI call them. If the project already has a Taskfile, copy those two tasks, the `vars` and the `includes` into it. Without them, every hook fails with `Task "check:fast" does not exist` (tested).
+[templates/Taskfile.yml](templates/Taskfile.yml) has `check` and `check:fast`, because the hooks and CI call them, and `vuln`, because `check` runs it. If the project already has a Taskfile, copy those three tasks, the `vars` and the `includes` into it. Without them, every hook fails with `Task "check:fast" does not exist` (tested).
 
 The result in a project:
 

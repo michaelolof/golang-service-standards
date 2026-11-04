@@ -533,7 +533,7 @@ return 0`)
 - **Change rules:**
   - Forward-only.
   - Every statement is safe to re-run.
-  - Destructive changes are split across two releases: expand, then contract.
+  - On an `existing` scope (COL-15), destructive changes are split across two releases: expand, then contract. On a `greenfield` scope no old release has to keep working, so one migration is enough.
   - Manual operations live in `db/manual/` and are not embedded.
 - **Runner.** Migrations run through a command in `cmd/tools/`, usually `cmd/tools/migrate`, as the release step (LAY-5). The test harness runs the same code. It keeps a version table and takes a lock. Each project chooses what it's built on.
 

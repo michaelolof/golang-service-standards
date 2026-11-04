@@ -12,5 +12,6 @@ includes:
 tasks:
   test:       {desc: Unit tests, no infra, cmds: [go test -race ./...]}
   build:      {desc: Build everything, cmds: [go build ./...]}
+  vuln:       {desc: Known vulnerabilities in the code, cmds: [go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...]}
   check:fast: {desc: What the hooks run (the standard's local checks and unit tests), deps: [standards:check:fast, test]}
-  check:      {desc: CI gate (read-only), deps: [standards:check, test, build]}
+  check:      {desc: CI gate (read-only), deps: [standards:check, test, build, vuln]}

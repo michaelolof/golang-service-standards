@@ -122,4 +122,4 @@ Order by severity, with tenant-boundary findings first. Also list the leads that
 - **Verify live.** After merging, check on a local instance with two tenants: each tenant's own resources still work, and the other tenant's return 404.
 - **Sweep again.** Re-run the whole search for every pattern you fixed, to catch stragglers.
 
-If you can run sub-agents in parallel, split Phase 2 into five groups: A and B; C and D; E; F, G and H; I and J. Each sub-agent must prove its findings with tests, and the work merges through isolated branches.
+If Phase 2 is too much for one pass, split it into five groups: A and B; C and D; E; F, G and H; I and J. Work through them in turn, with at most one sub-agent running at a time. Each sub-agent must prove its findings with tests.

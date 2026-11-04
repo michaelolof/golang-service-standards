@@ -271,7 +271,7 @@ Pass and return entities by value. Use a pointer receiver only on methods that m
 - Declare it as `enumx.New[T, any](nil)`, or with an unexported `tMeta` struct when the variants carry metadata.
 - The fallback is always `nil`, so the zero value `""` is invalid.
 - Name variables `<Type><Variant>`.
-- Wire values are UPPER_SNAKE. Nothing is frozen on a greenfield service, so existing values are renamed to match.
+- Wire values are UPPER_SNAKE. On a `greenfield` scope (COL-15) nothing is frozen, so existing values are renamed to match. On an `existing` scope, a rename is a breaking change, and the plan says how callers move.
 - Every enum has `Parse<T>(string) (T, error)`, `Validate() error` and `Oneof() string`, built from a shared sorted helper.
 
 **Why.**

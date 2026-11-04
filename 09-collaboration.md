@@ -24,17 +24,18 @@ It draws on three sources:
 | COL-6 | Implement in small steps, each ending green. Change only what the task needs. |
 | COL-7 | Refine against the standard with tests green, then run `task check`. |
 | COL-8 | `completed` means fully implemented, tested, verified when possible, and meeting the requirement. The agent marks it without asking, and reports completed or not completed, with the evidence. Never "should work". |
-| COL-9 | When a workstream's last task is `completed`, the agent writes a completion document straight away, without being asked: a standalone HTML file in `completion/`, checked in a browser, covering everything it did, why, the impact, code sources and many scenarios. A small change with no plan or task list entry gets one too. It makes the case for the work honestly, and it must not lie. |
+| COL-9 | When a workstream's last task is `completed`, the agent writes a completion document straight away, without being asked: a standalone HTML file in `completion/`, checked in a browser, covering everything it did, why, the impact, code sources, many scenarios and any database change, with syntax highlighting on every code block. A small change with no plan or task list entry gets one too. It makes the case for the work honestly, and it must not lie. |
 | COL-10 | Only the engineer marks a task or a workstream `done`, by an explicit instruction after reviewing it. Review covers four concerns: works, solves the real problem, fits, reads well. |
-| COL-11 | Stop rules: two failed attempts, growing scope, a request that breaks the standard, or pressure to skip a step. |
+| COL-11 | Stop rules: two failed attempts, growing scope, a request that breaks the standard, a scope status that doesn't match what the agent finds, or pressure to skip a step. |
 | COL-12 | Autonomy is granted per task type and earned through measured results. |
 | COL-13 | Every repeated correction becomes a rule, a check, or a canonical example. |
 | COL-14 | Everything written for a person uses clear, approachable language, with a practical example and a code source. |
-| COL-15 | Each project keeps one living `tasklist.md`: a tracker table grouped into phases that each deliver something useful, linked to a section per task. A task can only depend on tasks above it. A dependency in another workstream that isn't `done` yet is a warning, not a blocker. |
+| COL-15 | Each project keeps one living `tasklist.md`: a tracker table grouped into phases that each deliver something useful, linked to a section per task. A task can only depend on tasks above it. A dependency in another workstream that isn't `done` yet is a warning, not a blocker. Each scope is marked `greenfield`, `existing` or `unconfirmed`. The engineer sets it when the task list or a task is written, so the agent asks and never assumes, and nothing is planned or changed while it's `unconfirmed`. |
 | COL-16 | Each task being worked on is detailed in an implementation plan in `implementation/`, which the engineer approves before work starts. All the work one plan covers is one workstream. |
 | COL-17 | Every implementation plan has a table of all the sub-tasks needed to finish it end to end, in the task list's format, with temporary IDs that exist only in that plan. |
 | COL-18 | Only the engineer deletes an implementation plan or completion document. A finished plan stays in the folder until the engineer explicitly says to delete it. |
 | COL-19 | A workstream goes to the engineer whole, implemented end to end. Never ask for `done` on part of it unless the engineer asked for that. If an item must be `done` before another in the same workstream or phase, ask first. |
+| COL-20 | A session runs at most one subagent at a time, only when it's justified, and says why before starting it. |
 
 ---
 
@@ -59,7 +60,7 @@ General best practice never overrides a rule here. If the current request confli
 
 ## COL-2 · The brief
 
-**Rule.** The engineer starts every task with a brief. A short one is fine; a missing one is not. If the task is on the task list, the brief can just name it, because its section already gives the goal and the acceptance criteria (COL-15).
+**Rule.** The engineer starts every task with a brief. A short one is fine; a missing one is not. If the task is on the task list, the brief can just name it, because the list already gives the goal, the acceptance criteria and the scope (COL-15). Any other brief states the scope and its status if the work could affect users, a deployment or stored data.
 
 ```text
 Task:           Admins can cancel a transfer that hasn't reached the provider.
@@ -68,6 +69,7 @@ Completed when: - INITIATED, no provider reference → CANCELLED, operation aban
                 - has a provider reference → invalid_input
                 - PENDING or later → invalid_input
                 - task check passes
+Scope:          API: existing
 Priority:       correctness, then API shape. Performance is not a concern here.
 Read:           DOM-5, DOM-7, DATA-4, HTTP-3; features/transfers.md
 Terms:          transfer, provider reference, operation (domain/doc.go glossary)
@@ -79,9 +81,12 @@ Don't touch:    the custody adapter; the transfers table schema
 ## COL-3 · Read, then ask
 
 **Rule.** Before writing code, the agent:
-1. reads the docs the brief names, the code it will change, and the nearest canonical example of the same kind of thing (handler, repository method, worker);
-2. lists every ambiguity it found, each with a proposed answer;
-3. proposes extra cases in the same given/when/then form as the brief.
+1. runs the security check if one is due (SEC-27);
+2. reads the docs the brief names, the code it will change, and the nearest canonical example of the same kind of thing (handler, repository method, worker);
+3. lists every ambiguity it found, each with a proposed answer;
+4. proposes extra cases in the same given/when/then form as the brief.
+
+A scope status that's `unconfirmed` is always on that list, and so is a missing one on work that could affect users, a deployment or stored data, because the agent can't work it out from the repo (COL-15).
 
 The engineer answers before any code is written. An ambiguity is a decision that belongs to the engineer, and guessing it is how wrong code gets written confidently.
 
@@ -151,10 +156,11 @@ For your attention:
 - The SQL guard and the domain rule both check "no provider reference". The duplication is deliberate:
   the SQL guard protects against concurrent requests. Say if you want it written differently.
 Deviations: none.
+Security check: not due until 2026-11-11.
 Warnings: none.
 ```
 
-The report always has a "Warnings" line, even if it says "none". A dependency in another workstream that isn't `done` yet goes there (COL-15).
+The report always has a "Warnings" line, even if it says "none". A dependency in another workstream that isn't `done` yet goes there (COL-15). So does a security check that couldn't run, or a finding that's still open. The report also has a "Security check" line (SEC-27).
 
 Never "should work", "I believe this fixes it" or "tests should pass". If the tests or `task check` couldn't run, say exactly why, and that the task is therefore not `completed`.
 
@@ -170,12 +176,13 @@ It covers everything that was implemented, not just the highlights. It's unambig
 
 | Section | What it says |
 |---|---|
-| Header | The tasks it covers (linked), the plan, the status, and where to review the change (a branch or PR). A small change with no plan or task list entry only needs the last of these. |
+| Header | The tasks it covers (linked), the plan, the status, the scope with its status (COL-15), and where to review the change (a branch or PR). A small change with no plan or task list entry only needs the last of these. |
 | Summary | What works now that didn't before, and whether every acceptance criterion is met. Say any bad news here, not just further down. |
 | Acceptance criteria | Every criterion, whether it's met, and the evidence. |
 | Criteria not met | For each one: what's missing, why it's impossible or can't be met, what was tried, what it means for users, and what the engineer needs to decide. Write "None" if they're all met. Not having got to it isn't a reason: finish it first. |
-| Warnings | Anything the engineer should know before deciding. Always check for a dependency in another workstream that isn't `done` yet (COL-15): name the task, and say what would need redoing if its review changes it. Write "None" if there are none. |
+| Warnings | Anything the engineer should know before deciding. Always check for a dependency in another workstream that isn't `done` yet (COL-15): name the task, and say what would need redoing if its review changes it. Include a security check that couldn't run, or a finding that's still open (SEC-27). Write "None" if there are none. |
 | What was done | Everything that changed, with links to the code. |
+| Database | Everything that changed in what's stored, with the schema and the explanation. See below. Write "None" if nothing stored changed. |
 | What led to it | The problem, what was found in the code, and how that led to this implementation. |
 | Justification | Each decision, the options not chosen and why, and anything that differs from the plan. |
 | Impact | What changes, and for whom: callers, data, other code, operations. What stays the same. Breaking changes, risks and known limits. |
@@ -190,11 +197,20 @@ It covers everything that was implemented, not just the highlights. It's unambig
 
 **Scenarios.** Write one for each acceptance criterion, then more for failures, edge cases and anything the engineer might ask "what happens if…?" about. Each one tells the story in order: the situation, what happened before the change, what happens now, why it matters, where it is in the code, and how far it was checked.
 
+**The database.** Stored data is the hardest thing to change back, so a change to it gets its own section, not a passing mention elsewhere. The section has:
+- **Every change to the schema:** each table, column, index and key added or removed, and each migration. Show the schema itself, copied from the repo, with a diff for anything that changed and the old definition of anything removed.
+- **Why:** what each change is for, and why it's shaped that way, such as why a table has that key.
+- **Values that changed meaning:** a column can keep its name and type but hold something different, such as a password hash in a new format. The schema doesn't show this, so name each one, with what it held before and what it holds now.
+- **Reads and writes:** which actions read and write the changed tables, and any request that now does more database work.
+- **Existing data:** what happens to it, what a deploy must do, what breaks if that step is skipped, and whether there's a way back. On a `greenfield` scope (COL-15), just say there's none to account for.
+- **Other stores:** the same for anything else that keeps data, such as a cache's keys and how long they last.
+
 **The format.** A completion document is HTML because HTML presents and explains work better than Markdown: side-by-side before and after, diagrams, colour for what passed and what didn't, and interaction where it helps. That's the only reason, so use what helps the reader and nothing more.
 - It stands alone, like a Markdown file: one `.html` file with its styles and any scripts inside it. It needs no build step, shares no files with other documents, and loads nothing from the internet.
 - It can be as long as it needs to be. If the work reads better in more than one file, use more than one. Each still stands alone.
 - Nothing depends on it, so the engineer can delete it whenever it's out of date or no longer needed (COL-18).
 - Bad news is never collapsed. The summary, the acceptance criteria and the criteria not met are always visible.
+- Every code block has syntax highlighting for its language, including schemas, requests, responses and command output. The colours stay inside the page: use any highlighter while writing it and keep the coloured HTML, or put the highlighter's script in the page.
 - Code sources are written out as text, `path:line` (COL-14), because a browser can't open a local file at a line.
 
 **Check it in a browser.** Before sending it, open it with [Playwright MCP](https://github.com/microsoft/playwright-mcp), which this standard requires. Playwright MCP blocks `file:` URLs by default (tested on v0.0.82), so serve the folder first, with this or any other local server:
@@ -230,13 +246,17 @@ Here's a cut-down example. It's invented, based on `TRF-016` (COL-15). A real on
   .unmet { color: #a40e26; font-weight: 600; }
   .warning { border-left: 4px solid #a40e26; background: #fff5f5; padding: .5rem 1rem; }
   .compare { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; }
+  .kw { color: #cf222e; }
+  .fn { color: #8250df; }
+  .str { color: #116329; }
+  .key { color: #0550ae; }
 </style>
 </head>
 <body>
 <h1>Completion: new asset and one-coin <code>acme</code> wallets</h1>
 <p><strong>Task:</strong> <a href="../tasklist.md#trf-016">TRF-016</a>.
    <strong>Plan:</strong> <a href="../implementation/new-asset-and-acme.md">new-asset-and-acme.md</a>.
-   <strong>Status:</strong> <code>completed</code>. <strong>Review:</strong> branch <code>new-asset-and-acme</code>.</p>
+   <strong>Status:</strong> <code>completed</code>. <strong>Scope:</strong> <code>API: greenfield</code>. <strong>Review:</strong> branch <code>new-asset-and-acme</code>.</p>
 
 <h2>Summary</h2>
 <p>Customers can now hold the new asset on <code>acme</code>, and each <code>acme</code> wallet holds exactly one coin.
@@ -261,19 +281,22 @@ Here's a cut-down example. It's invented, based on `TRF-016` (COL-15). A real on
      real wallet to confirm it first.</p>
 </div>
 
+<h2>Database</h2>
+<p>None. Nothing stored changed: the new rules are checks in the code, and <code>supported_assets</code> keeps its column and type.</p>
+
 <h2>Scenarios</h2>
 <h3>A customer asks for an <code>acme</code> wallet with two coins</h3>
 <div class="compare">
-  <div><h4>Before</h4><pre>POST /api/v1/wallets
-{"supported_assets": ["USDC", "USDT"], "network": "BASE"}
+  <div><h4>Before</h4><pre><span class="kw">POST</span> <span class="fn">/api/v1/wallets</span>
+{<span class="key">"supported_assets"</span>: [<span class="str">"USDC"</span>, <span class="str">"USDT"</span>], <span class="key">"network"</span>: <span class="str">"BASE"</span>}
 
-201: the wallet is created with both coins,
+<span class="str">201</span>: the wallet is created with both coins,
 which acme can no longer hold</pre></div>
-  <div><h4>Now</h4><pre>POST /api/v1/wallets
-{"supported_assets": ["USDC", "USDT"], "network": "BASE"}
+  <div><h4>Now</h4><pre><span class="kw">POST</span> <span class="fn">/api/v1/wallets</span>
+{<span class="key">"supported_assets"</span>: [<span class="str">"USDC"</span>, <span class="str">"USDT"</span>], <span class="key">"network"</span>: <span class="str">"BASE"</span>}
 
-400: "supported_assets must contain exactly one asset
-for this provider; got 2. Create one wallet per asset"</pre></div>
+<span class="kw">400</span>: <span class="str">"supported_assets must contain exactly one asset
+for this provider; got 2. Create one wallet per asset"</span></pre></div>
 </div>
 <p>The check runs after a provider is selected, so other providers still accept several coins.</p>
 <p>Where: <code>internal/core/wallet/routing.go</code> (<code>ValidateWalletAssetCount</code>).
@@ -290,6 +313,8 @@ for this provider; got 2. Create one wallet per asset"</pre></div>
 - something implemented that the document doesn't mention;
 - anything the engineer has to ask the meaning of;
 - a page that's broken, or that hides bad news in a collapsed section;
+- a code block with no syntax highlighting;
+- a change to stored data that the Database section doesn't cover;
 - too few scenarios to decide from.
 
 ## COL-10 · Review, and moving work to `done`
@@ -325,7 +350,7 @@ Only a clear instruction moves work to `done`:
 - Lint already covers formatting and mechanical style, so review time goes on the four concerns and on the rules lint can't check ([02](02-style-and-naming.md#what-the-lint-config-covers-and-what-it-cant)).
 - Edits to approved acceptance tests are flagged and discussed, never waved through.
 - The writing is reviewed too. If the reviewer has to ask what a report, PR description or comment means, or where it is in the code, it goes back (COL-14).
-- A second agent with fresh context may review first. It gets the diff and the brief, not the implementer's reasoning, so its read isn't anchored on it.
+- A second agent with fresh context may review first (COL-20). It gets the diff and the brief, not the implementer's reasoning, so its read isn't anchored on it.
 
 **Merging.** A person approves every merge, and nothing merges unreviewed. Merging and `done` are separate decisions.
 
@@ -337,6 +362,7 @@ Only a clear instruction moves work to `done`:
 - **The same failure survives two attempts.** It reports its hypothesis and what it tried, then backs out to the last green commit.
 - **Scope grows**, or a requirement conflicts with an invariant. It raises this as soon as it sees it, not at the end.
 - **A request breaks the standard.** It says "No, but here's what I can do", and offers the closest compliant option.
+- **A scope status doesn't match what it finds**, such as production data behind a scope marked `greenfield` (COL-15). It asks before going on.
 - **It is under pressure to skip a step.** Urgency doesn't change the process: "rely on your disciplines" (*The Clean Coder* ch 11).
 
 **Why.** An agent that keeps going produces confident output whatever happens. These are the points where continuing does more harm than stopping.
@@ -557,7 +583,7 @@ The tracker comes first in the file, with these columns:
 | Task ID | A unique ID, linked to the task's section: a prefix and a number, such as `TRF-016`. It never changes and is never reused. It doesn't contain the phase number, because tasks move between phases. |
 | Title | What the task delivers, in a few plain words. |
 | Phase | The phase number and name, such as `3 · Wallets`. Rows stay in phase order. |
-| Scope | Where the work lands: `API`, `Admin`, `Web`, and anything else the project has, such as `Worker` or `SDK`. Usually one scope per task, so each can be planned and finished on its own. |
+| Scope | Where the work lands, and that scope's status: `API: greenfield`, `Admin: existing`, `Web: unconfirmed`. A scope can be anything the project has, such as `Worker` or `SDK`. Usually one scope per task, so each can be planned and finished on its own. |
 | Priority | `P0`: the project can't launch without it. `P1`: first work after launch. `P2`: useful, with no date. |
 | Dependencies | The IDs of the tasks above it that must be finished first, or `None`. |
 | Status | One of the seven statuses below. |
@@ -567,12 +593,12 @@ For example:
 ```markdown
 | Task ID | Title | Phase | Scope | Priority | Dependencies | Status |
 |---|---|---|---|---|---|---|
-| [TRF-012](#trf-012) | Create and manage wallets through the Product API | 3 · Wallets | API | P0 | TRF-011 | `done` |
-| [TRF-013](#trf-013) | Manage wallets through the Admin API | 3 · Wallets | Admin | P0 | TRF-012 | `done` |
-| [TRF-014](#trf-014) | Manage wallets on the admin dashboard | 3 · Wallets | Web | P0 | TRF-013 | `done` |
-| [TRF-015](#trf-015) | Test the wallet feature end to end | 3 · Wallets | API, Admin, Web | P0 | TRF-014 | `done` |
-| [TRF-016](#trf-016) | Add a new asset and one-coin `acme` wallets | 3 · Wallets | API | P0 | TRF-015 | `inprogress` |
-| [TRF-017](#trf-017) | Send funds through the Product API | 4 · Outflows | API | P0 | TRF-015 | `todo` |
+| [TRF-012](#trf-012) | Create and manage wallets through the Product API | 3 · Wallets | API: greenfield | P0 | TRF-011 | `done` |
+| [TRF-013](#trf-013) | Manage wallets through the Admin API | 3 · Wallets | Admin: greenfield | P0 | TRF-012 | `done` |
+| [TRF-014](#trf-014) | Manage wallets on the admin dashboard | 3 · Wallets | Web: existing | P0 | TRF-013 | `done` |
+| [TRF-015](#trf-015) | Test the wallet feature end to end | 3 · Wallets | API: greenfield, Admin: greenfield, Web: existing | P0 | TRF-014 | `done` |
+| [TRF-016](#trf-016) | Add a new asset and one-coin `acme` wallets | 3 · Wallets | API: greenfield | P0 | TRF-015 | `inprogress` |
+| [TRF-017](#trf-017) | Send funds through the Product API | 4 · Outflows | API: unconfirmed | P0 | TRF-015 | `todo` |
 ```
 
 **Dependencies only point up the list.** A newer task, further down the list, can depend on older tasks above it. An older task never depends on a newer one. If a task turns out to need one below it, the order is wrong, so move the needed task up.
@@ -593,6 +619,36 @@ There are seven, and no others. Anything else that needs saying goes in the task
 | `deferred` | Valid work, put off on purpose. | What would restart it |
 | `cancelled` | No longer needed. The row stays, so its ID isn't reused. | Why, and who decided |
 
+### Scope status
+
+Each scope in a task's row has a status of its own, because one task can touch a new API and a dashboard people already use. It says what the work has to protect, while the task's status says how far the work has got. There are three, and no others.
+
+| Scope status | Meaning | What the work does |
+|---|---|---|
+| `greenfield` | Nothing here has to be preserved: no real users, no deployment that must keep running, and no data or infrastructure that must survive. A test environment that can be wiped and rebuilt still counts. | Change things directly. Don't add what only existing users would need: data migrations, backfills, compatibility code, old and new versions side by side, deprecation periods or gradual rollouts. Renaming a field or enum value is a plain edit. A schema change is still a migration file (DATA-11). |
+| `existing` | Something real depends on it: users, API callers, a running deployment, infrastructure or stored data. If only part of it exists, it's still `existing`, and the task's section says which part. | The task's section says what exists, and the plan says how it keeps working (COL-16). |
+| `unconfirmed` | The engineer hasn't said which of the two it is yet. | Ask. Nothing gets planned or changed until the engineer answers. The task list itself can be written and reviewed with rows like this. |
+
+**The engineer sets it, when the task list or a task is written.** Nothing fixes a scope or its status ahead of time for a whole project or repo. The agent can't set it, because the repo can't show it. A project can have migrations and a production deploy file with no real users, and a service that looks new can already have callers. A doc that says "no live users" may be out of date. All of that is evidence for a proposal, not a confirmation.
+- When an agent writes a task list or adds a task, every scope the engineer hasn't given a status goes in as `unconfirmed`, even if the agent has a good guess. It never writes `greenfield` or `existing` on an assumption.
+- It raises them straight away, all in one message, with what it found and a proposed answer (COL-3). One sentence from the engineer can confirm many rows, such as "All of this is greenfield".
+- A scope with no status, such as in a task list written before this rule, counts as `unconfirmed`.
+
+Here's an invented example of the question:
+
+```text
+I've marked API and Web as `unconfirmed` in the task list, because the repo can't show whether anything
+real depends on them. The answer changes the work: if something does, each task needs a plan to keep it
+working. If nothing does, we change things directly.
+
+- API: I propose `existing`. deploy/production.yaml deploys it, but that doesn't show real callers or data.
+- Web: I propose `greenfield`. I found no deployment config for it.
+
+Does anything real depend on each one? If so, what has to keep working?
+```
+
+**It can change.** The first real user, deployment or stored data makes every later task in that scope `existing`. The engineer says when that happens, and the agent updates the rows that haven't started. If the agent finds something that doesn't match a status, such as production data behind a `greenfield` scope, it stops and asks (COL-11).
+
 ### The task section
 
 Each task has one section, with these fields. Add more if the task needs them.
@@ -604,6 +660,7 @@ Each task has one section, with these fields. Add more if the task needs them.
 | Requirements | What the work must include, and any limits on how it's done. |
 | Acceptance criteria | Statements someone can check. They're the "Completed when" of the brief (COL-2), and they become the tests (COL-4). |
 | Breaking changes | What callers must change, or "None". |
+| What exists | Only for a scope marked `existing`: who and what depends on it now, and what must keep working or move. For example: "The admin team uses the dashboard daily. Its login and wallet list must keep working during this change." (invented) |
 | Implementation plan | A link to the plan, added when work starts (COL-16). |
 
 The section doesn't repeat the phase, scope, priority, dependencies or status. Those live only in the tracker, so the two can't disagree.
@@ -633,7 +690,7 @@ chosen when the wallet is created.
 - [ ] `acme` accounts are created in the wallet's coin, and nothing sends `USD`.
 
 **Breaking changes.** `supported_assets` stays an array, but on `acme` wallets it must now
-hold exactly one asset. There are no live users to migrate.
+hold exactly one asset. Nothing calls the API yet, so no caller has to change.
 
 **Implementation plan.** [implementation/new-asset-and-acme.md](implementation/new-asset-and-acme.md)
 ```
@@ -644,8 +701,10 @@ The `<a id>` line keeps the tracker's link working if the title changes.
 
 - Change the status when the work changes, not at the end of a phase.
 - New work goes on the list when it's found, as `todo`, in the phase that needs it.
-- The engineer decides what's on the list: adding, cancelling or deferring a task, and changing a priority or an acceptance criterion. The agent proposes these and may move a task's status as the work goes, up to `completed`. Only the engineer's instruction moves it to `done` (COL-10).
+- The engineer decides what's on the list: adding, cancelling or deferring a task, and changing a priority, an acceptance criterion or a scope status. The agent proposes these and may move a task's status as the work goes, up to `completed`. Only the engineer's instruction moves it to `done` (COL-10).
 - Don't keep counts by hand. Anyone who needs a count can get it from the table.
+
+A scope status exists because a wrong guess costs real work either way. An agent that assumes existing users adds migrations and compatibility code that nobody needs. An agent that assumes there are none can break a real caller or lose real data.
 
 **Why.** One list means nobody has to piece the project together from chat and memory. Phases by feature mean that stopping early still leaves something that works. Keeping each fact in one place stops the list contradicting itself, which real task lists do (tested: a script compared each tracker with its sections):
 
@@ -656,7 +715,7 @@ The `<a id>` line keeps the tracker's link working if the title changes.
 
 Without one format, each project's list drifts its own way. Across three codebases, the file had two names (`tasklist.md`, `PROJECT_TASKS.md`), the plans folder had two spellings (`implementation/`, `implementations/`), each list added its own statuses (such as `revalidate` and `code-complete`), and only one tracker linked to its sections.
 
-**How it's checked.** A person checks it in review, using the phase test above. A script could check the mechanical parts: every row has a section, every dependency exists and is above its task, and every status is one of the seven. That script isn't built yet.
+**How it's checked.** A person checks it in review, using the phase test above. A script could check the mechanical parts: every row has a section, every dependency exists and is above its task, every status is one of the seven, and every scope has one of the three scope statuses. That script isn't built yet. Only the engineer can tell whether a scope status is true.
 
 ## COL-16 · The implementation plan
 
@@ -680,6 +739,7 @@ Plans are kept up to date until the engineer marks their work `done`. After that
 | Sub-task table | Every sub-task needed to finish the plan end to end (COL-17). |
 | The issue today | How the code behaves now, with code sources and an example of what goes wrong. |
 | What changes and what doesn't | The behaviour that changes, and what callers can rely on staying the same. |
+| Keeping what exists working | Only for a scope marked `existing` (COL-15): how data moves, what callers must change, the order of the deploy, and the way back. |
 | Decisions | Each choice: the options, the one taken and why. Open ones are the engineer's to answer (COL-3). |
 | Sub-task sections | One section per row of the table, in the same order (COL-17). |
 | Risks | What could go wrong, and what we'd do about it. |
@@ -705,6 +765,7 @@ A plan that covers several tasks is finished when the engineer has marked the la
 
 **How it's checked.** A person checks it in review. These go back:
 - a task marked `inprogress` with no linked plan;
+- a plan for a scope that's still `unconfirmed`;
 - a plan whose tasks are all `done`, but whose header doesn't say so;
 - a plan that fails COL-14's three tests.
 
@@ -717,14 +778,14 @@ Here's the table from the plan for `TRF-016`:
 ```markdown
 | Sub-task ID | Title | Phase | Scope | Priority | Dependencies | Status |
 |---|---|---|---|---|---|---|
-| [ST-1](#st-1) | Map the new asset to `acme`'s code | 1 · New asset | API | P0 | None | `completed` |
-| [ST-2](#st-2) | Accept the new asset on `ETH` only | 1 · New asset | API | P0 | ST-1 | `completed` |
-| [ST-3](#st-3) | Enforce one asset per `acme` wallet | 2 · One-coin wallets | API | P0 | None | `inprogress` |
-| [ST-4](#st-4) | Create `acme` accounts in the wallet's coin | 2 · One-coin wallets | API | P0 | ST-3 | `todo` |
-| [ST-5](#st-5) | Check every acceptance criterion on a running service | 3 · End to end | API | P0 | ST-2, ST-4 | `todo` |
+| [ST-1](#st-1) | Map the new asset to `acme`'s code | 1 · New asset | API: greenfield | P0 | None | `completed` |
+| [ST-2](#st-2) | Accept the new asset on `ETH` only | 1 · New asset | API: greenfield | P0 | ST-1 | `completed` |
+| [ST-3](#st-3) | Enforce one asset per `acme` wallet | 2 · One-coin wallets | API: greenfield | P0 | None | `inprogress` |
+| [ST-4](#st-4) | Create `acme` accounts in the wallet's coin | 2 · One-coin wallets | API: greenfield | P0 | ST-3 | `todo` |
+| [ST-5](#st-5) | Check every acceptance criterion on a running service | 3 · End to end | API: greenfield | P0 | ST-2, ST-4 | `todo` |
 ```
 
-Title and Scope mean what they mean on the task list. The others work like this in a plan:
+Title and Scope mean what they mean on the task list, and a sub-task's scope status always matches its task's. The others work like this in a plan:
 
 | Column | In a plan |
 |---|---|
@@ -843,3 +904,26 @@ For a plan that covers `TRF-016` and `TRF-017`:
 **Why.** Part of a workstream can't show that the whole thing works end to end, so the engineer would be judging it without the evidence that matters most. Each extra review also costs their time, and work built on a part they later change has to be redone.
 
 **How it's checked.** The engineer checks it: a request to mark part of a workstream `done`, with no instruction to do so, goes back.
+
+## COL-20 · At most one subagent, and only when justified
+
+**Rule.** A working session may run one subagent at a time besides itself, and only when it's justified. This covers anything that starts another agent, such as a fork, a background agent or a workflow, so a tool that starts several at once breaks the limit. Another can start once the first has finished and its result has been read. Only the engineer's explicit instruction raises the limit, and only for that request.
+
+A subagent is justified only when one of these is true. The agent says which, in one line, before it starts one:
+- **It needs a fresh read:** a review or acceptance tests that mustn't be shaped by the implementer's reasoning (COL-4, COL-10).
+- **It's a side job the session shouldn't wait on,** such as a long security check (SEC-27), while the session gets on with other work.
+- **It means reading across many files,** and only the conclusion is needed.
+
+| The situation | Use a subagent? |
+|---|---|
+| Reading three files you know the names of | No. Read them. |
+| Running `task check` | No. Run it. |
+| Finding every caller of a function | No. Search for it. |
+| Reviewing a diff with fresh context before sending it | Yes, one. |
+| Splitting a feature between four agents to finish faster | No. Speed alone isn't a reason. |
+| An audit with five groups to check | One group at a time, in the session or in one subagent. |
+| The engineer says "Review this with three agents." | Yes, for that request. |
+
+**Why.** A subagent knows only what its prompt says, and the session sees only the summary it sends back, so detail is lost in both directions. Its mistakes come back sounding as confident as its findings. Each one costs tokens, several at once can edit the same files, and nobody can follow several streams of work at the same time.
+
+**How it's checked.** A person checks it in review, from the session and the report. No script checks it yet.

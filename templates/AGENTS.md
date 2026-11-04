@@ -32,10 +32,23 @@ Don't restructure existing tests. They're the guardrails during a refactor.
 You can mark work `completed` on your own. Only the engineer marks it `done`, by an explicit
 instruction. When a workstream's last task is `completed`, write its completion document,
 `completion/<topic>.html`, straight away, without being asked. Check it with Playwright MCP, using a
-full-page screenshot and the console, as COL-9 says, then send it to the engineer. A small change with
-no plan or task list entry gets one too, with no `done` step. Never send part of a workstream for
-review. Never delete an implementation plan or completion document unless the engineer explicitly
-tells you to.
+full-page screenshot and the console, as COL-9 says, then send it to the engineer. Every code block in
+it has syntax highlighting, and any change to stored data gets its own section, with the schema and the
+explanation. A small change with no plan or task list entry gets a completion document too, with no
+`done` step. Never send part of a workstream for review. Never delete an implementation plan or
+completion document unless the engineer explicitly tells you to.
+
+Every scope on the task list is marked `greenfield`, `existing` or `unconfirmed`, as COL-15 says. The
+engineer sets it when the task list or a task is written, because the repo can't show it. Never assume either way: mark it `unconfirmed`
+and ask, and don't plan or change anything until they answer. On `greenfield`, don't add migrations of
+old data or compatibility code. On `existing`, the plan says how what exists keeps working.
+
+Before starting any work, read `security-checks.md`, beside the task list. If its "Next due" date has
+arrived, or there's no file or no row, run the security check first and record it, as SEC-27 says. It covers
+primary dependencies, not their dependencies. Every report has a "Security check" line.
+
+Run at most one subagent at a time, and only when it's justified. Say why in one line before starting
+it, as COL-20 says.
 
 Every report and completion document has a "Warnings" line. If a task depends on one in another
 workstream that isn't `done` yet, carry on, and say so there.

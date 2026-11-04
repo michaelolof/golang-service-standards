@@ -26,8 +26,12 @@ These haven't been decided, and nothing enforces them yet.
 | What's the difference between `completed` and `done`? | `completed` means fully implemented, tested, verified when possible, and meeting the requirement, and the agent marks it. `done` only comes from the engineer, by an explicit instruction, after reviewing a completion document. Neither depends on merging (COL-8, COL-9, COL-10). |
 | How much work goes for review at once? | A whole workstream, implemented end to end, unless the engineer explicitly asks for part of it. A small change with no plan or task list entry gets a completion document for visibility, with no `done` step (COL-5, COL-9, COL-19). |
 | Where do completion documents live, and in what format? | `completion/<topic>.html`, beside `implementation/`. Each is a standalone HTML file, because HTML presents and explains work better. Nothing depends on one, so the engineer can delete it at any time (COL-9, COL-18). |
+| What must a completion document show for code and data? | Every code block has syntax highlighting, with the colours inside the page. Any change to stored data gets its own Database section, with the schema, why it changed, values that changed meaning, reads and writes, and what happens to existing data (COL-9). |
 | Why do agents need Playwright MCP? | To check that a completion document displays properly before sending it. Playwright MCP blocks `file:` URLs by default, so the agent serves the folder locally first (COL-9). |
 | Can a task depend on one further down the list? | No. A task can only depend on tasks above it. A dependency in another workstream that isn't `done` yet is a warning, not a blocker (COL-15). |
+| How does an agent know whether work must account for existing users, deployments or data? | Each scope on the task list is marked `greenfield`, `existing` or `unconfirmed`. The engineer sets it when the task list or a task is written. The agent asks instead of assuming, and nothing is planned or changed while it's `unconfirmed` (COL-15). |
+| How many subagents can a session use? | At most one at a time, only when it's justified, and the agent says why before starting it. Only the engineer's explicit instruction raises the limit (COL-20). |
+| How often are published attacks and vulnerabilities checked? | At least every 7 days, against the project's primary dependencies and not their dependencies. Nothing runs on a timer, so `security-checks.md` records each run and the next work to start runs a check that's due (SEC-27). |
 | Do implementation plans list their sub-tasks? | Yes. Every plan has a table in the task list's format, with temporary IDs that exist only in that plan (COL-17). |
 | Who deletes implementation plans? | Only the engineer, on an explicit instruction. A finished plan and its completion document stay in the folder (COL-18). |
 
@@ -55,7 +59,7 @@ These haven't been decided, and nothing enforces them yet.
 | How are required struct fields marked? | With a struct tag on the field, never a comment. Fields stay optional unless tagged. The `requiredtag` plugin checks literals (STY-3). |
 | Which tags mark a field as required? | Each project configures its own. The standard's config uses `validate:required` and `lint:required`. |
 | Which naming conventions? | `Store` and `Repo`, `<Op>Args` and `<Op>Result`, and UPPER_SNAKE enum values. |
-| Are existing enum wire values frozen? | Not by the standard, which assumes a project with no external users yet (STY-2, DOM-6). |
+| Are existing enum wire values frozen? | Not on a `greenfield` scope. On an `existing` scope, renaming one is a breaking change (STY-2, DOM-6, COL-15). |
 
 ## Domain
 

@@ -38,6 +38,7 @@ The short version: no hard-coded secrets, no secrets in logs, no tenant IDs from
 | SEC-24 | Capability tokens and links are bound to their tenant and resource, expire, and are redeemed atomically when single-use. | shared test |
 | SEC-25 | Secrets stay out of URL errors, comparisons are constant-time, and GET endpoints don't return secrets to roles that don't need them. | review |
 | SEC-26 | Security audits follow `security-audit.md`: read-only until findings are approved, and a finding counts only once it's proven. | review |
+| SEC-27 | The project's primary dependencies are checked against attack publications, exploited-vulnerability lists and CVEs at least every 7 days. Their own dependencies aren't looked up. `security-checks.md` records each run, and the next work to start runs any check that's due. | review |
 
 ---
 
@@ -583,13 +584,13 @@ On gofi older than v0.10.4, running out of open files stops the server for good,
 ### SEC-18 · Vulnerabilities and supply chain
 
 **Rule.**
-- `task check` runs `govulncheck` at a pinned version over what ships, `./cmd/...`, or `./...` for a library. CI fails on any finding that reaches that code.
+- `task check` runs `govulncheck` at a pinned version over what ships, `./cmd/...`, or `./...` for a library. The template runs `./...` because it works with any layout, so a service narrows it to `./cmd/...`. CI fails on any finding that reaches that code.
 - The `go` line in `go.mod` (or a `toolchain` line) pins the patch version. Bump it on every Go security release.
 - Code that imports testcontainers or docker never compiles into a production binary. Moving it behind a build tag is paused with the other test changes (TEST-14). Check what a production binary imports with `go list -deps ./cmd/...`.
 - gosec is on in the shared lint config. Each `//nolint:gosec` carries a reason.
 
 **Why.**
-- With no pinned patch version, whatever toolchain is installed locally is used, so `govulncheck` reports standard-library findings that a newer Go patch release has already fixed. Pin the patch version.
+- With no pinned patch version, whatever toolchain is installed locally is used, so `govulncheck` reports standard-library findings that a newer Go patch release has already fixed. A small program using `net/http` on Go 1.27.1 failed with 5 findings, and passed after `go mod edit -toolchain=go1.27.3` (tested). Pin the patch version.
 - An ordinary package of test infrastructure that imports testcontainers pulls in containerd, buildkit and docker, and most of a scan's findings can come from them. Keep that code out of what ships.
 - Findings also reach production code through common modules, such as `golang.org/x/net` and `golang.org/x/crypto`, and through indirect dependencies, such as an old database driver that a migration library pulls in. Update the module that brings in the fix.
 - Running a pinned version, such as `govulncheck@v1.9.0`, from the Taskfile, with the Go patch version pinned as well, is the setup to copy.
@@ -625,3 +626,83 @@ The audit runs in order: understand the product, map the attack surface, check e
 | J | Secret handling and comparisons | SEC-1, SEC-8, SEC-10, SEC-15, SEC-25 |
 
 **Why.** Reading code isn't an audit. An email-linking problem like the one in SEC-21 stays hidden until something looks for that class, and it's still a lead until a test proves it. Bugs like these come in families, so one fix without a sweep leaves the rest in place.
+
+### SEC-27 · Regular security checks
+
+**Rule.** New attacks and vulnerabilities get published whether or not the code changes, so each project checks for them at least every 7 days. An agent isn't a long-running job, and nothing wakes it on a timer. So the check is due by date, and the next piece of work picks it up.
+
+**When it runs.**
+- Before any work starts, whether it's a task or a small change, the agent reads `security-checks.md`, beside `tasklist.md`.
+- If today is on or after the top row's "Next due" date, or there's no file or no row, the check is due. The agent runs it first, as part of the work. Otherwise it carries on.
+- It also runs early if the engineer asks, or if the agent learns of an exploited vulnerability in something the project uses.
+- If it can't run, such as with no network, the agent says so under "Warnings" (COL-8) and adds no row, so it stays due.
+- The report always has a "Security check" line: what it found, or when the next one is due.
+
+**The file.** The newest run goes at the top. Only the engineer changes the interval. A row is added even when nothing was found, because that's the record of the last run. Here's an invented example:
+
+```markdown
+# Security checks
+
+Interval: 7 days
+
+| Run on | Next due | Run by | Looked at | Result |
+|---|---|---|---|---|
+| 2026-11-04 | 2026-11-11 | Agent, before TRF-017 | 12 primary dependencies, for anything published since 2026-10-28 | 1 finding: `golang.org/x/net` CVE-2023-39325, TRF-018 proposed. 2 ruled out: the affected code isn't called. |
+| 2026-10-28 | 2026-11-04 | Agent, before TRF-016 | 12 primary dependencies, for anything published since 2026-10-20 | Nothing found. |
+```
+
+The file holds public IDs and task links only. A weakness in the project's own code, such as one a new kind of attack reveals, goes to the engineer. It stays out of the file until it's fixed, because other people can read the repo.
+
+**What it covers.** The project's primary dependencies, and whatever has been published about them since the last run. The first run covers everything still unfixed.
+
+A primary dependency is one the project chose itself: the Go version, a module in `go.mod` without `// indirect`, a package named directly in another manifest, and the database, cache, queue, proxy and base image it runs on. The dependencies of those dependencies aren't looked up. That would take far too long, and they're harder to fix, because a fix usually has to come through the primary dependency anyway. If `govulncheck` reports one that the code calls, it's handled like any other finding.
+
+1. **List them.** This command lists the Go ones, and any newer version:
+
+   ```sh
+   go list -m -u -f '{{if not (or .Main .Indirect)}}{{.Path}} {{.Version}}{{with .Update}} -> {{.Version}}{{end}}{{end}}' all | grep .
+   ```
+
+   It asks the Go module proxy about each module, so set `GOPRIVATE` for private modules first.
+2. **Look each one up in these sources:**
+
+| Source | What it adds |
+|---|---|
+| `govulncheck`, using the [Go vulnerability database](https://pkg.go.dev/vuln/) | Known vulnerabilities in Go and Go modules, and whether the code calls the affected function |
+| [CISA's Known Exploited Vulnerabilities catalog](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) | Vulnerabilities being used in real attacks, in any product |
+| [OSV](https://osv.dev) and the [GitHub Advisory Database](https://github.com/advisories) | Known vulnerabilities for one package at one version, including packages that aren't Go |
+| [NVD](https://nvd.nist.gov) | The details and severity of a CVE (a public ID for one vulnerability) |
+| The dependency's own security advisories and release notes | Security fixes with no CVE. A private library is in no public database, so this is its only source. |
+| Security bulletins and published attack write-ups about these dependencies | New kinds of attack with no CVE yet. Compare each with the classes in [security-audit.md](security-audit.md), and search the code for the same pattern. |
+
+These commands cover the first three, with invented inputs for the date, module and version:
+
+```sh
+task vuln
+
+curl -s https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json \
+  | jq -r --arg since 2026-10-28 '.vulnerabilities[] | select(.dateAdded >= $since) | [.dateAdded, .cveID, .vendorProject, .product] | @tsv'
+
+curl -s https://api.osv.dev/v1/query -d '{"package":{"name":"golang.org/x/net","ecosystem":"Go"},"version":"0.16.0"}' \
+  | jq -r '.vulns[].id'
+```
+
+3. **Sort every match:**
+   - **Finding:** proven. The version in use is affected, and the project reaches the affected code or setting.
+   - **Lead:** not proven yet. Say what would prove it.
+   - **Ruled out:** say why, such as "the affected function is never called".
+
+   A newer version isn't a finding by itself. Upgrading is only part of this check when a source above names a security problem.
+
+**The ground rules are SEC-26's.** The check changes no code. It tries nothing against production or a third party, and any proof runs locally. It never prints secrets. Look up public packages only, and never send private module names, code or config to a public service.
+
+**What happens to a finding.**
+- **Being exploited, and the project reaches it:** stop and tell the engineer straight away (COL-11).
+- **Any other finding:** propose a task with a priority (COL-15), and carry on with the current work. A fix goes into the current work only if the engineer says so.
+- A finding still open goes under "Warnings" in the report and the completion document (COL-8, COL-9).
+
+**Why.** The databases only list what someone has reported to them. A library can fix a security bug in an ordinary release with no CVE, and a private library is never listed, so each primary dependency's own advisories and release notes are read too. `govulncheck` in `task check` (SEC-18) also only sees Go code. HTTP/2 Rapid Reset shows the gap. CISA's catalog lists it as CVE-2023-44487, under the product "HTTP/2". The Go advisory for the same attack has another ID, CVE-2023-39325, and it says nothing about a proxy in front of the service (tested: looked up both). A date in a file makes the check happen on a project where no job runs on a schedule. Seven days is short enough that a published attack doesn't sit for long, and long enough that the check isn't most of the work.
+
+It isn't part of `task check`, because the build would then start failing on a date, with no code change. Nothing runs while no work is happening, so an idle project isn't checked until its next task.
+
+**How it's checked.** A person checks it in review: the report has no "Security check" line, or the top row was overdue when the work started. No script checks it yet.
