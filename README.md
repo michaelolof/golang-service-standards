@@ -332,7 +332,7 @@ Following one cancel request through those files:
 | [security-audit.md](security-audit.md) | The prompt for running a multi-tenant security audit, and the checklist for writing secure code | SEC-26 |
 | [10 · Adoption](10-adoption.md) | How a project consumes the standard, and what makes it mandatory for agents and people | ADO-* |
 | [09 · Collaboration](09-collaboration.md) | How an engineer and an agent take a task from brief to `done`: brief, questions, tests first, plan, `completed` and `done`, completion document, review, stop rules, autonomy, clear language, task lists, implementation plans, workstreams | COL-1…20 |
-| [lint/.golangci.yml](lint/.golangci.yml) | The shared golangci-lint v2 config, and the standard's own [`requiredtag`](lint/requiredtag) plugin | |
+| [lint/.golangci.yml](lint/.golangci.yml) | The shared golangci-lint v2 config, and the standard's own [`requiredtag`](lint/requiredtag) and [`wrapgaps`](lint/wrapgaps) plugins | |
 | [decisions.md](decisions.md) | What was decided, and the few things still parked | |
 | [RULES.md](RULES.md) | Every rule on one page, generated from the tables in each document. It's what an agent loads first. | |
 | [templates/](templates), [hooks/](hooks), [Taskfile.standards.yml](Taskfile.standards.yml) | What a project takes from here to make the rules mandatory ([Install](#install)) | |
@@ -353,7 +353,7 @@ From cheapest to most expensive:
 | Layer | What | Status |
 |---|---|---|
 | Formatter | gofumpt and gci, through `task fmt` | Ready ([config](lint/.golangci.yml)) |
-| Linter | golangci-lint v2 with 40 linters and 2 formatters, including depguard, forbidigo, wsl and the standard's own `requiredtag` plugin. `task lint` builds it | Ready ([config](lint/.golangci.yml), [plugin](lint/requiredtag)) |
+| Linter | golangci-lint v2 with 41 linters and 2 formatters, including depguard, forbidigo, wsl and the standard's own `requiredtag` and `wrapgaps` plugins. `task lint` builds it | Ready ([config](lint/.golangci.yml), plugins: [requiredtag](lint/requiredtag), [wrapgaps](lint/wrapgaps)) |
 | Architecture test | A shared, table-driven `internal/architecture` test that encodes the layer table, naming bans and test hygiene. [LAY-7](01-project-layout.md) has its table. | To build |
 | Compiler | Unexported `stamp` and `eventName` types: only a literal stamp and a constant event name compile | errx does this. A project's `httperr` and `logger` packages do it by following ERR-1 and LOG-1 |
 | Custom analyzers | `constquery` (constant queries), `repoverbs` (repository verbs) | To build |

@@ -1,5 +1,5 @@
 # Shared golangci-lint config for Go services.
-# Validated on golangci-lint v2.15.0. It needs the custom binary that has the standard's plugin compiled in (requiredtag).
+# Validated on golangci-lint v2.15.0. It needs the custom binary that has the standard's plugins compiled in (requiredtag, wrapgaps).
 # In a project, `task lint` builds that binary and runs it (10-adoption.md, ADO-1).
 #
 # Rule IDs in comments (LAY-, DOM-, ABS-, ERR-, HTTP-, CTX-, CON-, LOG-, OBS-, DATA-, TEST-, STY-)
@@ -44,6 +44,7 @@ linters:
     # errors (ERR-*)
     - errorlint
     - wrapcheck
+    - wrapgaps # ERR-3 the returns wrapcheck skips (the standard's plugin)
     - nilerr
     - nilnil
     - errname
@@ -150,6 +151,12 @@ linters:
     wsl_v5: # STY-9: default checks, plus a blank line after every closing brace
       enable: [after-block]
 
+    wrapcheck: # ERR-3. Written before custom, because wrapgaps reuses these two lists.
+      # gofi MDW-6 and HTTP-3: the error from c.Next() and c.Send() goes back unchanged.
+      # Send has no closing parenthesis, so it also covers SendString, SendBytes and SendStream.
+      extra-ignore-sigs: &wrap-ignore-sigs [errx.New(, errx.Newf(, errx.NewKind(, errx.NewKindf(,
+        errx.Wrap(, errx.WrapKind(, httperr., gofi.Context).Next(, gofi.Context).Send]
+      ignore-package-globs: &wrap-ignore-packages ["*/internal/http/httperr", "*/internal/core/httperr"]
     custom:
       # STY-3: a literal must set every field tagged required. Fields are optional unless tagged.
       requiredtag:
@@ -159,6 +166,14 @@ linters:
         settings:
           tags: [validate:required, lint:required]
           allow-empty-returns: true # return T{}, err and return T{}, false
+      # ERR-3: the returns wrapcheck skips, checked against wrapcheck's own ignore lists.
+      wrapgaps:
+        type: module
+        description: Errors returned directly in a closure, or from a generic call, are wrapped (ERR-3)
+        original-url: ./wrapgaps
+        settings:
+          extra-ignore-sigs: *wrap-ignore-sigs
+          ignore-package-globs: *wrap-ignore-packages
     funcorder: {constructor: true, struct-method: true, alphabetical: false}
     embeddedstructfieldcheck: {forbid-mutex: true} # ABS-9
     modernize:
@@ -167,10 +182,6 @@ linters:
       case: {rules: {json: snake}}
     nolintlint: {require-explanation: true, require-specific: true}
     errorlint: {errorf: false, asserts: true, comparison: true} # ERR-6
-    wrapcheck: # ERR-3
-      extra-ignore-sigs: [errx.New(, errx.Newf(, errx.NewKind(, errx.NewKindf(,
-        errx.Wrap(, errx.WrapKind(, httperr.]
-      ignore-package-globs: ["*/internal/http/httperr", "*/internal/core/httperr"]
     nilnil: {detect-opposite: true}
     iface: {enable: [identical, unused, opaque]} # ABS-1
     interfacebloat: {max: 7} # ABS-1
@@ -282,12 +293,16 @@ linters:
       - {path: '^internal/(repository|adapters/[a-z]+store)/', linters: [forbidigo], text: '\[tx\]'} # DATA-4
       - {path-except: '^internal/(http|core)/', linters: [forbidigo], text: '\[cursor\]'}
       - {path-except: '/httperr/', linters: [forbidigo], text: '\[httperr-fmt\]'}
+      # ERR-7: httperr's constructors return *httperr, so WithMsg and WithSubject chain without an interface.
+      - {path: '/httperr/', linters: [revive], text: '^unexported-return:'}
       # LAY-1: pkg/ libraries follow Go conventions, not the ones here (errx, the logger package, wrapcheck stamps).
       - {path: '^pkg/', linters: [forbidigo], text: '\[(errs|errx|logger|ctx)\]'}
       # LOG-1: only the logger package and main touch slog; the logger's own functions take the stamp before ctx.
       - {path: '^(internal/foundation/logger|cmd)/', linters: [forbidigo], text: '\[slog\]'}
       - {path: '^internal/foundation/logger/', linters: [revive], text: 'context-as-argument'}
-      - {path: '^pkg/', linters: [wrapcheck]}
+      - {path: '^pkg/', linters: [wrapcheck, wrapgaps]}
+      # ERR-7: the error body's __sid field is a fixed name, not snake_case.
+      - {linters: [tagliatelle], text: "got '__sid'"}
 
 issues:
   max-issues-per-linter: 0

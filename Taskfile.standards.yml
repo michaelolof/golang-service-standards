@@ -59,13 +59,13 @@ tasks:
         msg: "CLAUDE.md can hide or contradict AGENTS.md. Move its text under the heading in AGENTS.md, then delete CLAUDE.md or leave only the line @AGENTS.md in it."
 
   lint:build:
-    desc: Build golangci-lint with the standard's plugin compiled in
+    desc: Build golangci-lint with the standard's plugins compiled in
     dir: .standards/lint
     cmds:
       - go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0 custom
     status:
       - test -x bin/golangci-lint
-      - test -z "$(find .custom-gcl.yml requiredtag -newer bin/golangci-lint)"
+      - test -z "$(find .custom-gcl.yml requiredtag wrapgaps -newer bin/golangci-lint)"
 
   lint:config:
     desc: Write .golangci.yml from the standard, with this project's module path

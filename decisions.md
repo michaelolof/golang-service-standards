@@ -80,6 +80,12 @@ These haven't been decided, and nothing enforces them yet.
 | Do we build linters for stamps and event names? | No. The compiler enforces a literal stamp and a constant event name (ERR-1, LOG-3). |
 | Where do error kinds live? | Generic ones are shared, specific ones sit beside their owner (ERR-5). |
 | Does every error response include `retryable`? | Yes (ERR-7). |
+| Are the errors from gofi's `c.Next()` and `c.Send()` wrapped? | No. Their errors go back unchanged, and lint's ignore list grows by those two methods only (ERR-3). |
+| How are wrapcheck's gaps closed? | With the standard's own `wrapgaps` plugin, which reports direct returns in closures and generic calls, using wrapcheck's ignore lists. A check in the arch test wouldn't fail with the other lint, and wrapcheck skips closures on purpose (ERR-3). |
+| What code does an unknown error get? | `UNHANDLED_SERVER_ERROR`, including a recovered panic. `INTERNAL_SERVER_ERROR` is for a 500 someone chose (ERR-7, ERR-11). |
+| What does `httperr.Map` return? | `*httperr`, as `New` and `Wrap` do. There's no `HTTPError` interface (ERR-7). |
+| How is a `ValidateAndBind` error returned? | Through `httperr.Map`, which keeps gofi's status and leaves gofi's text out of the error, because it can quote the request body (HTTP-3, ERR-7). |
+| Does `httperr` have a `Newf`? | No. `fmt.Sprintf` stays banned in that package. `httperr.Wrap` with `errx.Newf` formats an issue (ERR-7, ERR-11). |
 | What log level do 4xx errors get? | Warn (ERR-9). |
 | Do log calls keep stamps? | Yes. The stamp is the first argument (where), and a constant event name follows `ctx` (what) (LOG-3). |
 | How is the logger obtained? | It isn't. One process-wide logger, called through the `logger` package's functions. Nothing injects a `*slog.Logger`, except into `pkg/` libraries (LOG-1). |

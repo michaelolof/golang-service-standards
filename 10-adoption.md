@@ -59,7 +59,7 @@ my-project/
 
 **The lint config is generated, not copied.** Two of its rules need the project's module path, and nobody may edit `.standards/`. So `task lint:config` writes `.golangci.yml` at the project root from the standard's copy, and `task lint:config:check` fails if someone edits it (tested). These two tasks use `sed` and `cmp`, which are on Linux and macOS, and on Windows with Git for Windows.
 
-**The linter builds itself.** The config needs the `requiredtag` plugin, which a plain `golangci-lint` doesn't have. The first `task lint` builds golangci-lint v2.15.0 with the plugin compiled in, into `.standards/lint/bin/`. That takes about 20 seconds and needs network access. You don't install golangci-lint, and nothing is added to your `go.mod`. The folder is ignored by git, so it can't trigger the drift check. An upgrade that changes the linter's version or the plugin rebuilds it on the next run (all tested).
+**The linter builds itself.** The config needs the `requiredtag` and `wrapgaps` plugins, which a plain `golangci-lint` doesn't have. The first `task lint` builds golangci-lint v2.15.0 with the plugins compiled in, into `.standards/lint/bin/`. That takes about 20 seconds and needs network access. You don't install golangci-lint, and nothing is added to your `go.mod`. The folder is ignored by git, so it can't trigger the drift check. An upgrade that changes the linter's version or the plugin rebuilds it on the next run (all tested).
 
 ## ADO-2 · Nobody edits the copy
 
@@ -227,7 +227,7 @@ After changing a rule in the standard, run `go run ./tools/genrules` to update `
 | Part | Status |
 |---|---|
 | Rule documents, `RULES.md` and its generator | Done |
-| Lint config and the `requiredtag` plugin | Done, and tested from `.standards/` |
+| Lint config and the `requiredtag` and `wrapgaps` plugins | Done, and tested from `.standards/` |
 | Templates (`AGENTS.md`, `Taskfile.yml`, `claude-settings.json`), hooks, `standards:check` | Done, and tested |
 | The standard's first version tag | Done: `v0.1.0` |
 | Shared architecture test (`arch` in the Taskfile) | To build. Until then, the rules it enforces are checked in review. |

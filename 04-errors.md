@@ -24,11 +24,11 @@ Application errors are created everywhere. A transport's errors are created only
 |---|---|---|
 | ERR-1 | Every errx, httperr and log call takes a stamp: the Unix time in milliseconds, as a plain literal, read from a clock. A stamp has no meaning, so it's never ordered, numbered or versioned. | the compiler, review |
 | ERR-2 | Create, wrap and classify errors with errx, and inspect them with stdlib `errors.Is/As/Join`. Only the errx functions ERR-2 names as forbidden are banned. | forbidigo |
-| ERR-3 | Wrap every error you return from a call exactly once with `errx.Wrap(stamp, err)`. | wrapcheck |
+| ERR-3 | Wrap every error you return from a call exactly once with `errx.Wrap(stamp, err)`. The errors from gofi's `c.Next()` and `c.Send()` go back unchanged. | wrapcheck, `wrapgaps` |
 | ERR-4 | Create errors with `New*`, and add a kind only if someone branches on it. Messages are lowercase, describe the condition, use `key=%q`, and contain no PII. | forbidigo, review |
 | ERR-5 | Application kinds: generic ones in `foundation/errkinds`, capability ones beside their owner with a `<pkg>_` prefix, and only if a caller branches on them. Each transport has its own error domain with its own kinds. | arch test |
 | ERR-6 | Driver and SDK errors are inspected and translated only in repositories and adapters, with `errors.Is/As` and `errx.WrapKind`. | depguard, errorlint |
-| ERR-7 | HTTP handlers return `httperr.Map(stamp, err)`. One mapper, one typed response body. | arch test, golden test |
+| ERR-7 | HTTP handlers return `httperr.Map(stamp, err)`, for bind errors too. One mapper, one typed response body. | arch test, golden test |
 | ERR-8 | Each job runtime has one mapping from kind to outcome. Handlers never choose an outcome. | review |
 | ERR-9 | Return an error or log it, never both. Log only at roots. | review |
 | ERR-10 | Discard close errors on readers. Join close errors on writers. Don't `Join` on paths that will be classified. | errcheck, review |
@@ -182,7 +182,35 @@ if w.Status != domain.WalletStatusActive {
 
 Stamp-only wrapping means a wrap site can't add identifiers.
 
-**Enforced by** wrapcheck, with `ignoreSigs` set to the errx and httperr constructors.
+**The two gofi methods that aren't wrapped.** `return c.Next()` and `return c.Send(200, s.Ok)` are correct as they are:
+- **`c.Next()`.** gofi MDW-6 says to return its error unchanged. That error already has its stamp from further in. Wrapping adds the same stamps to every failure on the route, and `__sid` doesn't change. Here is one failing request through five middleware, with the middleware's stamps made up:
+
+  ```text
+  Bare:    [ts 1793803231681]; [ts 1793732054971]; gocql: no hosts available in the pool
+  Wrapped: [ts 1000000000001]; [ts 1000000000002]; [ts 1000000000003]; [ts 1000000000004]; [ts 1000000000005]; [ts 1793803231681]; [ts 1793732054971]; gocql: no hosts available in the pool
+  ```
+
+  There's also a trap: `errx.Wrap(ts, nil)` returns a non-nil error, so `return errx.Wrap(ts, c.Next())` fails every successful request.
+- **`c.Send()`, `c.SendString()`, `c.SendBytes()` and `c.SendStream()`.** These are a handler's last line (HTTP-3). There's no later step for a stamp to tell apart.
+
+**Enforced by** two linters, which share one ignore list: the errx and httperr constructors, and those two gofi methods.
+- **wrapcheck** reports `return pkg.F()` and `err := pkg.F()` then `return err`.
+- **`wrapgaps`**, the standard's own plugin in [lint/wrapgaps](lint/wrapgaps), reports the two forms wrapcheck skips. wrapcheck stops at a closure on purpose, and it can't read a call written with type arguments:
+
+  ```go
+  // A direct return in a closure.
+  err := db.InTx(ctx, func(tx store.Tx) error {
+  	return repo.Save(ctx, tx, w) // error returned from a closure should be wrapped
+  })
+
+  // A generic call, in any function.
+  s, err := gofi.ValidateAndBind[createSchema](c)
+  if err != nil {
+  	return err // error returned from a generic function should be wrapped
+  }
+  ```
+
+Neither linter checks a call within the same package, so review covers that.
 
 ## ERR-4 · Creating errors and writing messages
 
@@ -291,24 +319,98 @@ if stderrors.As(err, &pgErr) && pgErr.Code == "23505" {
 
 **Rule.**
 - **Handlers.** A handler returns `httperr.Map(stamp, err)` for any error from `core`. It may add a client message with `.WithMsg(...)`, and it names the party affected with `.WithSubject(...)` when that isn't the caller (ERR-13).
-- **The mapper.** `Map` is the only switch from kind to HTTP error. It checks the most specific kind first. Unknown errors become `UNHANDLED_SERVER_ERROR`, carrying only the stamp.
+- **The mapper.** `Map` is the only switch from an error to an HTTP error. It checks gofi's own errors, then the most specific kind.
+- **Unknown errors** become `UNHANDLED_SERVER_ERROR`, carrying only the stamp, so searching for that code finds every error nobody mapped. `INTERNAL_SERVER_ERROR` is for a 500 someone chose, such as a response that fails validation (ERR-11).
+- **gofi's errors.** A `*gofi.HTTPError` keeps the status gofi chose, so a wrong content type stays a 415. A validation error follows ERR-11. Its text stays out of the error, because gofi's parser quotes the request body, and a token in that body would reach the log:
+
+  ```text
+  Body:   {"name":"a"} tok_example
+  Error:  unexpected tail: "tok_example"
+  Logged: validation failed location=Body field= rule=parser
+  ```
+
+- **The return type.** `Map`, `New` and `Wrap` return `*httperr`, and there's no `HTTPError` interface. ireturn rejects a function that returns a named interface, and an interface carrying `WithMsg` and `WithSubject` as well as the getters goes past interfacebloat's limit of 7. Callers can chain on `*httperr` without naming it.
+- **The encoder.** An error that isn't an `*httperr` also goes through `Map`, so a route that doesn't exist gets the same body as anything else. It keeps its own stamp if it has one.
 - **The response body** is a typed struct, encoded with `encoding/json`.
-- **Detecting an existing `HTTPError`** uses `errors.As`, not a type assertion. A type assertion fails once the error is wrapped.
+- **Detecting an existing `*httperr`** uses `errors.As`, not a type assertion. A type assertion fails once the error is wrapped.
 - **`UseIssueAsMsg`** (send the error's own message to the client) is allowed only inside `Map`, and only for kinds whose errors are created with `NewKind*` and client-safe text. Never `WrapKind` a library error into such a kind, because the library's text would reach the client.
-- **`httperr.New`** only when there is no underlying error. Used on an existing error, it drops the cause.
+- **`httperr.New`** only when there is no underlying error. Used on an existing error, it drops the cause, which is what `Map` wants for a validation error and nothing else.
+- **There is no `httperr.Newf`.** It needs `fmt.Sprintf`, which lint bans in this package so that nobody builds a JSON body by hand. To format an issue, create it with `errx.Newf` and pass it to `httperr.Wrap` (ERR-11).
 
 **Do.** One mapping point:
 
 ```go
-func Map(ts stamp, err error) HTTPError {
+func Map(ts stamp, err error) *httperr {
+	var (
+		validation gofi.ValidationError
+		framework  *gofi.HTTPError
+	)
+
 	switch {
+	case errors.As(err, &validation):
+		return fromValidation(ts, validation)
+	case errors.As(err, &framework):
+		return Wrap(ts, kindForStatus(framework.Code), err)
 	case errx.IsKind(err, errkinds.ErrKindNotFound):
 		return Wrap(ts, NotFoundErr, err)
 	case errx.IsKind(err, errkinds.ErrKindInvalidInput):
 		return Wrap(ts, BadRequestErr, err).UseIssueAsMsg()
 	// ...
 	default:
-		return Wrap(ts, InternalServerErr, err)
+		return Wrap(ts, UnhandledServerErr, err)
+	}
+}
+
+// fromValidation describes a gofi validation error without its text, which can
+// quote the request body.
+func fromValidation(ts stamp, validation gofi.ValidationError) *httperr {
+	location, field, rule := string(validation.SchemaType()), validation.SchemaValue(), validation.Rule()
+	issue := "validation failed location=" + location + " field=" + field + " rule=" + rule
+
+	if validation.Type() == gofi.ResponseErr {
+		return New(ts, InternalServerErr, issue)
+	}
+
+	return New(ts, BadRequestErr, issue).WithMsg("Invalid request").
+		WithData(validationData{Location: location, Field: field, Rule: rule})
+}
+
+type validationData struct {
+	Location string `json:"location"`
+	Field    string `json:"field"`
+	Rule     string `json:"rule"`
+}
+
+// kindForStatus turns the status gofi chose into the project's kind.
+func kindForStatus(status int) Kind {
+	switch status {
+	case 400:
+		return BadRequestErr
+	case 404:
+		return NotFoundErr
+	case 405:
+		return MethodNotAllowedErr
+	case 413:
+		return PayloadTooLargeErr
+	case 415:
+		return UnsupportedMediaTypeErr
+	// ...
+	default:
+		return UnhandledServerErr
+	}
+}
+```
+
+**Do.** The encoder's way in. An error no handler mapped goes through `Map`:
+
+```go
+e, ok := errors.AsType[*httperr](err)
+if !ok {
+	e = Map(1793869292495, err)
+
+	var stamped errx.StampedErr
+	if errors.As(err, &stamped) {
+		e.sid = stamped.Stamp()
 	}
 }
 ```
@@ -325,6 +427,8 @@ type errorBody struct {
 	SID       int             `json:"__sid"`
 }
 ```
+
+`__sid` is a fixed name, not snake_case. The shared lint config excludes tagliatelle's finding for that field and no other.
 
 **Don't.** Hand-built JSON. A message containing a `%q`-quoted value produces an invalid body:
 
@@ -352,7 +456,8 @@ if err != nil {
 ```
 
 **Enforced by:**
-- forbidigo on `fmt.(Appendf|Sprintf)` in `http/httperr`;
+- forbidigo on `fmt.(Appendf|Sprintf)` in `httperr`;
+- ireturn, on anything returning a named interface;
 - a golden test of the error body;
 - an arch test that only `internal/http/**` imports `httperr`.
 
@@ -438,8 +543,8 @@ return errx.Wrap(1792391358387, fnErr)
   - the worker dispatcher;
   - one shared `goSafe` helper for goroutines.
 - A recovered panic becomes an error carrying the panic's type and `debug.Stack()`. Never `%v` the panic value, because it may contain secrets. Return that error so the encoder logs it once.
-- **Request validation:** 400 `BAD_REQUEST_ERROR` with a generic message, and `data: {"location","field","rule"}` taken from gofi's validation error.
-- **Response validation:** 500.
+- **Request validation:** 400 `BAD_REQUEST_ERROR` with a generic message, and `data: {"location","field","rule"}` taken from gofi's validation error. `Map` does this (ERR-7).
+- **Response validation:** 500 `INTERNAL_SERVER_ERROR`.
 
 **Do.** This is close to the target, but it loses the stack:
 
@@ -448,7 +553,7 @@ func recoveryMiddleware(c gofi.Context) (handlerErr error) {
 	defer func() {
 		if recover() != nil {
 			logger.ErrorAttrs(1793625666959, "platform panic recovered", "method", c.Method(), "path", c.Path())
-			handlerErr = httperr.New(1793625667805, httperr.InternalServerErr, "panic recovered")
+			handlerErr = httperr.New(1793625667805, httperr.UnhandledServerErr, "panic recovered")
 		}
 	}()
 	return c.Next()
@@ -460,10 +565,13 @@ func recoveryMiddleware(c gofi.Context) (handlerErr error) {
 ```go
 defer func() {
 	if r := recover(); r != nil {
-		err = httperr.Newf(1791855812662, httperr.UnhandledServerErr, "panic recovered type=%T\n%s", r, debug.Stack())
+		err = httperr.Wrap(1791855812662, httperr.UnhandledServerErr,
+			errx.Newf(1793869292528, "panic recovered type=%T\n%s", r, debug.Stack()))
 	}
 }()
 ```
+
+A panic has no underlying error, so `errx.Newf` creates one to carry the detail, and `httperr.Wrap` gives it an HTTP kind. ERR-3's "never wrap an error you created" is about `errx.Wrap`, which would only add a second stamp. A panic is an unknown error, so its code is `UNHANDLED_SERVER_ERROR` (ERR-7).
 
 ## ERR-12 · Stdlib error constructors
 

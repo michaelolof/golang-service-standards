@@ -1,4 +1,4 @@
-# Builds golangci-lint with the standard's plugin compiled in, into ./bin/golangci-lint.
+# Builds golangci-lint with the standard's plugins compiled in, into ./bin/golangci-lint.
 # In a project, `task lint` does this for you.
 version: v2.15.0
 name: golangci-lint
@@ -6,3 +6,5 @@ destination: ./bin
 plugins:
   - module: github.com/michaelolof/requiredtag
     path: ./requiredtag
+  - module: github.com/michaelolof/wrapgaps
+    path: ./wrapgaps

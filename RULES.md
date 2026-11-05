@@ -62,11 +62,11 @@ Generated from the "Rules at a glance" tables. Don't edit it by hand. Each docum
 |---|---|
 | ERR-1 | Every errx, httperr and log call takes a stamp: the Unix time in milliseconds, as a plain literal, read from a clock. A stamp has no meaning, so it's never ordered, numbered or versioned. |
 | ERR-2 | Create, wrap and classify errors with errx, and inspect them with stdlib `errors.Is/As/Join`. Only the errx functions ERR-2 names as forbidden are banned. |
-| ERR-3 | Wrap every error you return from a call exactly once with `errx.Wrap(stamp, err)`. |
+| ERR-3 | Wrap every error you return from a call exactly once with `errx.Wrap(stamp, err)`. The errors from gofi's `c.Next()` and `c.Send()` go back unchanged. |
 | ERR-4 | Create errors with `New*`, and add a kind only if someone branches on it. Messages are lowercase, describe the condition, use `key=%q`, and contain no PII. |
 | ERR-5 | Application kinds: generic ones in `foundation/errkinds`, capability ones beside their owner with a `<pkg>_` prefix, and only if a caller branches on them. Each transport has its own error domain with its own kinds. |
 | ERR-6 | Driver and SDK errors are inspected and translated only in repositories and adapters, with `errors.Is/As` and `errx.WrapKind`. |
-| ERR-7 | HTTP handlers return `httperr.Map(stamp, err)`. One mapper, one typed response body. |
+| ERR-7 | HTTP handlers return `httperr.Map(stamp, err)`, for bind errors too. One mapper, one typed response body. |
 | ERR-8 | Each job runtime has one mapping from kind to outcome. Handlers never choose an outcome. |
 | ERR-9 | Return an error or log it, never both. Log only at roots. |
 | ERR-10 | Discard close errors on readers. Join close errors on writers. Don't `Join` on paths that will be classified. |

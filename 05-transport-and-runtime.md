@@ -75,7 +75,7 @@ Every project has both tests.
 
 **Rule.** The body follows gofi HND-5, in this order:
 
-1. `gofi.ValidateAndBind[<schema>](c)` is the first statement. Wrap its error as an HTTP bad request.
+1. `gofi.ValidateAndBind[<schema>](c)` is the first statement. Return its error through `httperr.Map(stamp, err)`, because it isn't always a bad request: a wrong content type is a 415 (ERR-7).
 2. Get dependencies with `deps.MustGet(c)`, and anything middleware stored, such as the principal.
 3. Do the work, as **one call**:
    - a method on the capability's service, if the capability has one;
@@ -123,7 +123,7 @@ var CancelTransferHandler = gofi.DefineHandler(gofi.RouteOptions{
 	Handler: func(c gofi.Context) error {
 		s, err := gofi.ValidateAndBind[cancelTransferSchema](c)
 		if err != nil {
-			return httperr.Wrap(1793346400056, httperr.BadRequestErr, err)
+			return httperr.Map(1793346400056, err)
 		}
 
 		d := deps.MustGet(c)
