@@ -29,7 +29,7 @@ This document builds on:
 | DATA-7 | Optimistic concurrency uses a version column with an atomic compare-and-set. A CAS is never read-then-write. | review, shared test |
 | DATA-8 | Idempotency keys are unique per tenant in the primary store. `CreateOrGet` returns `created bool`. | CI grep, review |
 | DATA-9 | One `pagination` package handles keyset cursors with a tie-breaker and a filter fingerprint. Driver page tokens never leave the repository. | forbidigo, shared test |
-| DATA-10 | A cache is a decorator that implements the same port as the repository. Redis code is split into one package per role, and keys follow a fixed format. | depguard, review |
+| DATA-10 | A cache is a decorator that implements the same port as the repository. Redis code is split into one package per role. Keys follow a fixed format: item keys have a TTL, and queue keys have a stated bound instead. | depguard, review |
 | DATA-11 | Migrations are timestamped, forward-only and safe to re-run, live in `db/migrations`, and run only from the migrate tool. | CI test |
 | DATA-12 | Split large files by aggregate, then by concern. | arch test, review |
 
@@ -424,7 +424,8 @@ func (r *Repo) CreateOrGet(ctx context.Context, t domain.Transfer, key domain.Id
 - **Wire format.** `base64.RawURLEncoding` of `{"v":1,"at":<unix-nanos>,"id":…,"f":<filter-fingerprint>}`.
 - **No signature.** A cursor carries the filter fingerprint, and it isn't signed.
 - **Decoding.** The transport decodes the cursor string. A malformed cursor, or one whose fingerprint doesn't match the current filters, is `invalid_input`.
-- **Request and response.** Core passes `pagination.Request{Limit, After *Cursor}` to the repository and gets back `pagination.Page[T]{Items, Next *Cursor}`.
+- **Request and response.** Core passes `pagination.Request{Limit, After Cursor}` to the repository and gets back `pagination.Page[T]{Items, Next Cursor}`.
+- **No cursor is the zero `Cursor`.** `After` is zero on the first page and `Next` is zero on the last one. Check with `IsZero()`. `Decode("")` returns the zero `Cursor`, and `Encode` turns the zero `Cursor` into `""`. A pointer would make `Decode("")` return `nil, nil`, which STY-3 forbids and nilnil reports.
 - **Repository query.**
   1. Fetch `limit+1` rows.
   2. Order by `(sort_col DESC, id DESC)`.
@@ -439,7 +440,7 @@ func (r *Repo) CreateOrGet(ctx context.Context, t domain.Transfer, key domain.Id
 after, err := pagination.Decode(s.Request.Query.Cursor, filters.Fingerprint())
 
 // Repository: the keyset tie-break, here in Mongo.
-if args.After != nil {
+if !args.After.IsZero() {
 	andClauses = append(andClauses, bson.M{"$or": bson.A{
 		bson.M{"occurred_at": bson.M{"$lt": args.After.At}},
 		bson.M{"occurred_at": args.After.At, "_id": bson.M{"$lt": args.After.ID}},
@@ -457,23 +458,27 @@ if args.After != nil {
 ```go
 package pagination
 
+// Cursor is a keyset position. The zero Cursor means none: the first page's
+// After, and the last page's Next.
 type Cursor struct {
 	At time.Time
 	ID string
 }
 
+func (c Cursor) IsZero() bool { return c.ID == "" }
+
 type Request struct {
 	Limit int
-	After *Cursor
+	After Cursor
 }
 
 type Page[T any] struct {
 	Items []T
-	Next  *Cursor
+	Next  Cursor
 }
 
-func Encode(c Cursor, fingerprint string) string           { /* v1 JSON -> RawURLEncoding */ }
-func Decode(s, fingerprint string) (*Cursor, error)        { /* "" -> nil; mismatch -> ErrKindInvalidInput */ }
+func Encode(c Cursor, fingerprint string) string           { /* zero -> ""; else v1 JSON -> RawURLEncoding */ }
+func Decode(s, fingerprint string) (Cursor, error)         { /* "" -> zero; mismatch -> ErrKindInvalidInput */ }
 func Trim[T any](items []T, limit int, key func(T) Cursor) Page[T] // drops the sentinel row, derives Next
 ```
 
@@ -487,11 +492,21 @@ func Trim[T any](items []T, limit int, key func(T) Cursor) Page[T] // drops the 
 **Rule.** Any cache follows the cache-aside, failure and invalidation bullets. The other bullets apply if your project uses Redis. A project without Redis ignores them.
 - **Cache-aside is a decorator.** It implements the same consumer port as the repository and is wired in `cmd`. Core doesn't know the cache exists.
 - **One package per role:** `adapters/rediscache`, `redislock`, `redisratelimit`, `redisqueue`.
-- **Keys:**
-  - Format is `<service>:<family>:v<N>:<id>`, built by one unexported function per key family.
+- **Keys** come in two kinds, and each key family is one or the other:
+
+  | | Item keys | Queue keys |
+  |---|---|---|
+  | What | One entry each: a cached value, a lock, a rate-limit counter, a piece of state | One long-lived key per queue: a stream, a schedule (sorted set), a dead-letter queue, and the sets that index their entries |
+  | Format | `<service>:<family>:v<N>:<id>` | `<service>:<family>:<queue>`, such as `myservice:ready:payouts` |
+  | Lifetime | Every key has a TTL | No TTL, because it would delete queued work. Each queue states its bound instead (below) |
+  | Versioning | Values are private JSON structs. Bump `vN` whenever their shape changes | Each entry carries its own version field. Renaming the key would strand everything queued under the old name |
+
+  - Each key family is built by one unexported function, or one constant for a queue.
   - Use the `{<service>}` hash tag only for key families that multi-key Lua scripts touch.
-  - Every key has a TTL.
-  - Values are private JSON structs. Bump `vN` whenever their shape changes.
+  - **A queue's bound** is written in its package comment, and the code keeps to it:
+    - acknowledged entries are deleted, or the stream is trimmed with `MAXLEN` or `MINID`;
+    - a dead-letter queue is trimmed by length or age;
+    - an index entry is removed by the same script that removes its work.
 - **Failures:**
   - A failed cache read logs and falls through to the store. A failed write logs.
   - Neither fails the request.

@@ -171,7 +171,7 @@ We tested this on Claude Code 2.1.314, with the template's settings file and a l
 
 ## ADO-5 · CI is the final check
 
-**Rule.** `task check` runs everything: `standards:check` (the `AGENTS.md` check, the lint config check, lint and the drift check), then the project's own tests and build. It's a required check on the default branch, so nothing merges while it fails. This is the only layer that works for every agent and every person.
+**Rule.** `task check` runs everything: `standards:check` (the `AGENTS.md` check, the lint config check, the stamp check, lint and the drift check), then the project's own tests and build. It's a required check on the default branch, so nothing merges while it fails. This is the only layer that works for every agent and every person.
 
 Any CI that can run a command will do. The job installs Go and Task, and runs one command:
 
@@ -228,6 +228,7 @@ After changing a rule in the standard, run `go run ./tools/genrules` to update `
 |---|---|
 | Rule documents, `RULES.md` and its generator | Done |
 | Lint config and the `requiredtag` and `wrapgaps` plugins | Done, and tested from `.standards/` |
+| `task stamps` and `task stamps:check` | Done, and tested from `.standards/` on a clone of one project, and from the standard on two more |
 | Templates (`AGENTS.md`, `Taskfile.yml`, `claude-settings.json`), hooks, `standards:check` | Done, and tested |
 | The standard's first version tag | Done: `v0.1.0` |
 | Shared architecture test (`arch` in the Taskfile) | To build. Until then, the rules it enforces are checked in review. |

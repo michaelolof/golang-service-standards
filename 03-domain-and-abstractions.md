@@ -25,8 +25,8 @@ If it does none of these, inline it. Most of the smells listed at the end of thi
 | DOM-5 | Value objects come from `New…`/`Parse…` returning an error. Entities have `Validate() error`. | review |
 | DOM-6 | Closed sets are enumx types declared one way, with `Parse`, `Validate` and a sorted `Oneof`. | arch test, reassign |
 | DOM-7 | One enum and one transition table per state machine. State changes only via `TransitionTo`. | test over `Values()` |
-| ABS-1 | One interface per dependency per consuming package, declared there, typed only with domain and stdlib types. No interface without a consumer and an implementation. | interfacebloat, iface, arch test |
-| ABS-2 | Implementations assert the interface they satisfy and return concrete types. | arch test, ireturn |
+| ABS-1 | One interface per dependency per consuming package, declared there, typed only with domain and stdlib types. No interface without a consumer and an implementation. gofi's `Deps` is the one interface with no method limit. | interfacebloat, iface, arch test |
+| ABS-2 | Implementations assert the interface they satisfy and return concrete types. Only gofi's `Deps` accessors and functions returning gofi's own interfaces return an interface. | arch test, ireturn |
 | ABS-3 | Name by role: `-er`, `Store`, domain nouns. Never `I*`, `*Iface`, `*Impl`, `*Adapter` or `*Manager`. | arch test |
 | ABS-4 | Pure rules are free functions. Orchestration lives in one `Service` per capability. | review |
 | ABS-5 | `New(Deps) (*Service, error)`, validated. No `With*` mutators, exported mutable fields or silent no-op defaults. | arch test |
@@ -360,7 +360,8 @@ func (t Transfer) TransitionTo(next TransferStatus, at time.Time) (Transfer, err
 **Rule.**
 - **Where.** The package that calls the methods declares the interface. It declares **one** interface per dependency, listing every method that package calls on it: one `Store` for the transfer repository, not one interface per function. Aim for 1 to 5 methods; 7 is the hard limit, and past it the dependency usually has two roles.
 - **Types.** Signatures use only `domain` and stdlib types, or `ports` types for a shared interface. Argument and result structs that a store method needs live in `domain`, beside the entity, such as `domain.CancelInitiatedTransferArgs`. The consumer and the implementation then share them, and nothing is declared twice. Never use types from the implementer's package.
-- **Shared.** When two or more packages need the same set of methods, declare it once in `ports/` instead of twice.
+- **Shared.** When two or more packages need the same set of methods, declare it once in `ports/` instead of twice. `foundation/` declares the few interfaces every layer uses, such as `clock.Clock` and `ids.Generator` (DOM-1, DOM-3).
+- **One exception: gofi's `Deps`.** HTTP handlers get their dependencies from `deps.MustGet(c)`, and `Deps` is an interface with one accessor for each dependency, returning an interface where the dependency has a real and a fake implementation (HTTP-1, gofi DEP-1 and DEP-2). It grows with the service, so it has no method limit. It doesn't make handlers depend on more than they use, because each handler calls only the accessors it needs.
 - **No stranded interfaces.** Every interface has at least one consumer outside its own declaration and at least one implementation in the module, test fakes included.
 
 **Why.**
@@ -379,10 +380,13 @@ If you need to embed an interface in a fake, the interface is too big.
 
 **Bloat and stranding.** Small consumer-owned interfaces can multiply if every function declares its own subset, and an interface can outlive its last user. The first two bullets prevent the first problem: one interface per consuming package, with shared types in `domain`. The last bullet catches the second. Stranded interfaces come from the opposite habit, declaring the interface beside its implementation: six of eleven repository `Store` interfaces declared that way had no consumer (see the **Don't** below).
 
-**Enforced by** an arch test, written with `go/types`, that lists every interface in `internal/` and fails if it:
-- has no implementation in the module;
-- is never used as a parameter, field or variable type outside its own declaration;
-- duplicates another interface's method set in a sibling package.
+**Enforced by:**
+- `interfacebloat` (max 7), except in `internal/http/deps/`.
+- `iface`'s `unused` check. It reports an interface that nothing in its own package uses, which is the right test for a consumer, because the consumer declares the interface where it uses it. `ports/` and `foundation/` are excluded, because their interfaces are used only by other packages.
+- An arch test, written with `go/types`, that lists every interface in `internal/` and fails if it:
+  - has no implementation in the module;
+  - is never used as a parameter, field or variable type outside its own declaration;
+  - duplicates another interface's method set in a sibling package.
 
 **Do.** One interface for the dependency, listing the methods this package calls:
 
@@ -399,8 +403,11 @@ type Store interface {
 ### ABS-2 · Implementations assert and return concrete types
 
 **Rule.**
-- Constructors return `*T`.
+- Constructors return `*T`. That includes the constructor of gofi's `Deps` implementation, which is a struct (gofi DEP-2).
 - The implementing type declares `var _ consumer.Iface = (*T)(nil)` next to its definition.
+- Two kinds of function may return an interface:
+  - the accessors on gofi's `Deps`, and `deps.MustGet`, as gofi DEP-1 and DEP-2 require (ABS-1);
+  - functions that return gofi's own interfaces, such as a router setup function returning the `gofi.Router` that `gofi.NewRouter` gave it.
 - Export an interface only when an implementation lives in another package. Test-only seams stay unexported.
 
 ```go
@@ -620,7 +627,8 @@ func Role[R domain.Provider](r *Registry, name domain.ProviderName) (R, error) {
 
 | Smell | Example | Instead |
 |---|---|---|
-| God repository or service locator | `ScyllaRepository` (186 methods); `repository.Repository` (25 accessors); `http/deps.Deps` (41 methods, including `MongoClient()`) | A narrow consumer interface per use (ABS-1) |
+| God repository or service locator | `ScyllaRepository` (186 methods); `repository.Repository` (25 accessors), whose callers get every store | A narrow consumer interface per use (ABS-1) |
+| A `Deps` accessor that hands out infrastructure | `http/deps.Deps` with `MongoClient()`, which gives every handler the whole database | Accessors return services and stores, never a client, driver or connection (ABS-1, LAY-3) |
 | Interface beside its only implementation, with no consumer | 6 of 11 repository `Store`s | Delete it; let the consumer declare one (ABS-1) |
 | Pure forwarder | `domain.OIDCClient`; `KMSProvider` | Delete it; call the wrapped type |
 | Speculative code | A `chainregistry` package nothing imports, doc-only `evm`/`solana`/`bitcoin` packages, vendor stubs that return "not implemented", an empty `tenancy` service package | Ship an adapter together with the feature that uses it |
@@ -639,9 +647,9 @@ func (c *OIDCClient) AuthorizeURL(s, p string) string { return c.client.Authoriz
 
 **Enforced by.**
 - `deadcode` (`golang.org/x/tools/cmd/deadcode`) in `task check`. This catches unwired packages and code reachable only from tests.
-- `interfacebloat` (max 7).
-- `iface` (`identical`, `unused`, `opaque`).
-- `ireturn`.
+- `interfacebloat` (max 7), except in `internal/http/deps/` (ABS-1).
+- `iface` (`identical`, `unused`, `opaque`). `unused` is off in `ports/` and `foundation/` (ABS-1).
+- `ireturn`, which allows gofi's own interfaces, and is off in `internal/http/deps/`.
 - `embeddedstructfieldcheck` (`forbid-mutex`).
 - `reassign`.
 - forbidigo for `time.Now` in `domain`/`core`.

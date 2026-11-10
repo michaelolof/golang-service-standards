@@ -185,7 +185,7 @@ linters:
     nilnil: {detect-opposite: true}
     iface: {enable: [identical, unused, opaque]} # ABS-1
     interfacebloat: {max: 7} # ABS-1
-    ireturn: {allow: [anon, error, empty, stdlib, generic]} # ABS-2
+    ireturn: {allow: [anon, error, empty, stdlib, generic, 'github\.com/michaelolof/gofi\.']} # ABS-2; gofi's own interfaces, such as gofi.Router
     gosec:
       includes: [G201, G202, G402, G404, G115] # SQL concat (DATA-5), TLS, weak rand, int overflow
 
@@ -303,6 +303,12 @@ linters:
       - {path: '^pkg/', linters: [wrapcheck, wrapgaps]}
       # ERR-7: the error body's __sid field is a fixed name, not snake_case.
       - {linters: [tagliatelle], text: "got '__sid'"}
+      # ABS-1: ports/ and foundation/ hold interfaces other packages use, so nothing in their own package does.
+      - {path: '^internal/(ports|foundation)/', linters: [iface], text: '^unused:'}
+      # ABS-1, ABS-2: gofi's Deps has one accessor per dependency, returning interfaces (gofi DEP-1, DEP-2).
+      - {path: '^internal/http/deps/', linters: [interfacebloat, ireturn]}
+      # STY-4: header names are lowercase kebab-case (gofi TAG-2). tagliatelle can't tell a header struct apart, so any such name passes.
+      - {linters: [tagliatelle], text: "json\\(snake\\): got '[a-z0-9]+(-[a-z0-9]+)+' want"}
 
 issues:
   max-issues-per-linter: 0

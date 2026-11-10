@@ -18,7 +18,7 @@ Comment *why*, never *what*.
 | STY-1 | Format with gofumpt and order imports with gci in three groups. Every project uses one shared lint config. | formatters, CI |
 | STY-2 | Names follow the [naming table](#sty-2--naming). | revive, staticcheck, arch test |
 | STY-3 | Guard clauses first. Split a function only where a part is its own idea. No length limit; complexity 20, nesting 4, 6 parameters, 3 results. A field tagged `lint:"required"` or `validate:"required"` must be set in every literal. | gocognit, revive, `requiredtag` |
-| STY-4 | Structs: identity, then data, then timestamps. A named `mu` sits above the fields it guards. Tags in a fixed order, snake_case JSON. | embeddedstructfieldcheck, tagliatelle |
+| STY-4 | Structs: identity, then data, then timestamps. A named `mu` sits above the fields it guards. Tags in a fixed order, snake_case JSON, and lowercase kebab-case header names. | embeddedstructfieldcheck, tagliatelle |
 | STY-5 | Doc-comment every exported identifier. Explain *why*. No step narration, plan references or bare TODOs. | revive, gocritic, CI grep |
 | STY-6 | Declaration order in a file: consts, vars, type, `New`, exported methods, unexported methods, helpers. | funcorder |
 | STY-7 | Use modern Go: `any`, `range n`, `new(v)`, `slices`/`maps`, `min`/`max`, `wg.Go`. | modernize, intrange |
@@ -114,6 +114,7 @@ The naming decisions from every area are collected in this one table. When a nam
 | Receiver | 1–2 letters from the type, the same on every method | `r *Repo`, `s *Service` | `self`, `this`, mixed names | STY-2 |
 | Boolean | Adjective or participle for state; `Is`/`Has`/`Can` for predicate functions | `Active`, `IsExpired()` | | STY-2 |
 | JSON tag | snake_case | `json:"transfer_id"` | camelCase | STY-4 |
+| Header tag, in a gofi schema's `Header` | lowercase kebab-case, as the header is sent | `json:"x-request-id"` | `json:"x_request_id"`, `json:"X-Request-ID"` | STY-4 |
 | Log message | Dotted lowercase event, past tense | `job.attempt.failed` | `"Failed to process job %s"` | LOG-3 |
 | Log key | snake_case string literal | `"tenant_id"` | `"err"`, `"tenantId"` | LOG-2 |
 | Metric | `<svc>.<capability>.<noun>`, with a unit set and no suffix | `myservice.wallet.provision.duration` | `edge_request_duration_ms` | OBS-2 |
@@ -274,6 +275,16 @@ func (c *DeliveryOutcomeCoordinator) WithBacklogTracker(tracker ports.WarmCheckB
   - A domain type may carry tags for HTTP schemas, such as `json` and `validate`, because it's the type used in schemas (DOM-4). It carries no database tags, whatever the database. `bson` tags go on a repository's private document type (DATA-2).
   - Don't hand-align tags.
   - JSON names are snake_case.
+  - Header names are the exception: lowercase kebab-case, as the header is sent, because gofi binds a schema's `Header` fields by those names (gofi TAG-2):
+
+    ```go
+    Header struct {
+    	ContentType string `json:"content-type" validate:"required"`
+    	RequestID   string `json:"x-request-id"`
+    }
+    ```
+
+    tagliatelle can't tell a header struct from any other, so the shared lint config lets through any lowercase kebab-case name. A body field written in kebab-case therefore also passes, and is left to review. Across three codebases, all 54 kebab-case `json` tags were headers.
 - **Optional struct fields in HTTP schemas** are pointers with `omitempty`, or values with `omitzero`, which works as in `encoding/json` since gofi v0.10.3. `omitempty` never omits a struct or array, so use `omitzero` or a pointer for an optional `[16]byte` ID.
 - **No driver types** in any struct outside `repository/` and `adapters/` (DOM-1, DOM-4). An ID is a domain `[16]byte` type, not `gocql.UUID`.
 
@@ -897,7 +908,7 @@ Between 36% and 57% of these were in test files, mostly `paralleltest`, which ha
 |---|---|---|
 | Layer import table | LAY-6, LAY-7 | arch test |
 | Root allowlist; no Go outside `cmd`/`internal`/`pkg`/`db/migrations`/`test`; `pkg/` imports no `internal/` | LAY-1 | arch test, depguard |
-| `main.go` declares only `main`; wiring in `wire.go` | LAY-2, LAY-3 | arch test |
+| `main.go` declares only `main` and `run`; wiring in `wire.go` | LAY-2, LAY-3 | arch test |
 | Banned package suffixes (`*utils`) and banned file names | LAY-9, LAY-10 | arch test |
 | No `README.md` under `internal/` or `cmd/` | LAY-11 | arch test |
 | No database or cache driver imported by `domain` | DOM-4 | depguard |

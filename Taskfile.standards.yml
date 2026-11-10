@@ -58,6 +58,16 @@ tasks:
       - sh: "[ ! -e CLAUDE.md ] || [ CLAUDE.md -ef AGENTS.md ] || [ \"$(cat CLAUDE.md)\" = '@AGENTS.md' ]"
         msg: "CLAUDE.md can hide or contradict AGENTS.md. Move its text under the heading in AGENTS.md, then delete CLAUDE.md or leave only the line @AGENTS.md in it."
 
+  stamps:
+    desc: Replace each __STAMP__ in the project's Go code with its own stamp, read from the clock (ERR-1)
+    cmds:
+      - go run -C .standards/tools/stamps . fill "$PWD"
+
+  stamps:check:
+    desc: Fail on a new stamp that task stamps didn't hand out, a new repeat, a stamp from the future or a __STAMP__ left in the code
+    cmds:
+      - go run -C .standards/tools/stamps . check "$PWD"
+
   lint:build:
     desc: Build golangci-lint with the standard's plugins compiled in
     dir: .standards/lint
@@ -103,7 +113,7 @@ tasks:
 
   standards:check:fast:
     desc: What the standard requires, without the network. A project's check:fast depends on this
-    deps: [agents:check, lint:config:check, lint]
+    deps: [agents:check, lint:config:check, stamps:check, lint]
 
   standards:check:
     desc: Everything the standard requires. A project's check depends on this

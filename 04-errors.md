@@ -22,7 +22,7 @@ Application errors are created everywhere. A transport's errors are created only
 
 | ID | Rule | Enforced by |
 |---|---|---|
-| ERR-1 | Every errx, httperr and log call takes a stamp: the Unix time in milliseconds, as a plain literal, read from a clock. A stamp has no meaning, so it's never ordered, numbered or versioned. | the compiler, review |
+| ERR-1 | Every errx, httperr and log call takes a stamp: the Unix time in milliseconds, as a plain literal. Nobody types one: write `__STAMP__` and run `task stamps`, which reads the clock. A stamp has no meaning, so it's never ordered, numbered or versioned. | the compiler, `task stamps:check` |
 | ERR-2 | Create, wrap and classify errors with errx, and inspect them with stdlib `errors.Is/As/Join`. Only the errx functions ERR-2 names as forbidden are banned. | forbidigo |
 | ERR-3 | Wrap every error you return from a call exactly once with `errx.Wrap(stamp, err)`. The errors from gofi's `c.Next()` and `c.Send()` go back unchanged. | wrapcheck, `wrapgaps` |
 | ERR-4 | Create errors with `New*`, and add a kind only if someone branches on it. Messages are lowercase, describe the condition, use `key=%q`, and contain no PII. | forbidigo, review |
@@ -49,28 +49,29 @@ Application errors are created everywhere. A transport's errors are created only
 - Log calls carry a stamp of their own, as their first argument: `logger.Warn(1793603411123, ctx, "db.rollback.failed", …)`. The stamp says *where* the line was logged; the constant event name says *what* happened (LOG-3). Both are needed, because one event name can be logged from many places.
 
 **Rule.**
-- A stamp is the current Unix time in milliseconds when the line is written: a plain integer literal, 13 digits long.
+- A stamp is the Unix time in milliseconds when the line is written: a plain integer literal, 13 digits long.
 - **A stamp has no meaning.** It isn't ordered, numbered, grouped by file or versioned. Never work one out from the stamps around it.
-- **Every new stamp comes from a clock.** Agents can't know the time, so they must run a command. Each run is a fresh reading, so run it once for each stamp. Use whichever your system has:
+- **Nobody types a stamp, people included.** Write `__STAMP__` where one belongs, then run `task stamps`:
 
-  | Where | Command |
-  |---|---|
-  | Linux | `date +%s%3N` |
-  | Linux, macOS | `python3 -c 'import time; print(time.time_ns() // 1000000)'` |
-  | Anywhere with Node | `node -e 'console.log(Date.now())'` |
-  | Windows PowerShell | `[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()` |
+  ```go
+  return errx.Wrap(__STAMP__, err)
+  ```
 
-  The Python and Node commands were tested. The other two come from their tools' documentation.
+  ```sh
+  task stamps
+  ```
 
-- **Editing a line?** You may overwrite its stamp with a newly generated one. Leave the other stamps in the file alone.
-- Copying a line means taking a new stamp.
+  `__STAMP__` is a valid Go identifier, so the file still parses until it's filled. `task stamps` replaces each `__STAMP__` in the project's Go code with its own clock reading. It never hands out a stamp the project already has, and it spaces the readings out and shuffles them, so neighbouring stamps have nothing in common.
+- **Editing a line?** You may replace its stamp with `__STAMP__` and run `task stamps` again. Leave the other stamps in the file alone.
+- Copying a line means writing `__STAMP__` in the copy.
 - No stamps in constants, variables or arithmetic.
-- Tests use `0`.
+- Tests use `0`. `task stamps` refuses a `__STAMP__` in a test file.
 - `httperr` takes an unexported `type stamp int`, not `type tid = int`. An alias lets variables through, so the "literal only" property breaks there.
-- Nothing checks that stamps are unique. A repeated stamp costs little, because the log line's event name still says what happened, so it isn't worth a tool.
 - Existing stamps don't need a sweep. They change only when their line is edited.
 
-**Don't.** These count upwards through a file, as if the number meant something (tested: across three codebases, 4,112 of 6,081 stamps were within 20 of the previous stamp in their file):
+**Why a tool.** A model can't read a clock unless it runs something, and it tends to count upward from the stamp next to it. Agents told to run a clock command once for each stamp still did, so `task stamps` reads the clock for them.
+
+**Don't.** These count upwards through a file, as if the number meant something (tested: across three codebases, 4,112 of 6,081 stamps were within 20 of the previous stamp in their file). `task stamps:check` reports each new one as not handed out by `task stamps`, or as a repeat if the number is already taken:
 
 ```text
 1778601001, 1778601002, 1778601003 … 1778601028
@@ -78,7 +79,7 @@ Application errors are created everywhere. A transport's errors are created only
 1773500205, 1773500206, 1773500207 … 1773500241
 ```
 
-**Do.** Each one is a separate reading from a clock, with no relation to its neighbours:
+**Do.** Each one came from `task stamps`, so it's a separate reading from a clock, with no relation to its neighbours:
 
 ```go
 return errx.Wrap(1793606419171, err)
@@ -94,7 +95,31 @@ return errx.NewKind(1793611082554, errkinds.ErrKindInvalidInput, "amount must be
 1793603411123456789  → 1793603411123456768   rounded, so it no longer matches the log
 ```
 
-**Enforced by** the compiler. Only a literal can be passed to an unexported type, so a variable, a call or a missing stamp doesn't compile.
+**Enforced by** the compiler and `task stamps:check`.
+- **The compiler:** only a literal can be passed to an unexported type, so a variable, a call or a missing stamp doesn't compile.
+- **`task stamps:check`:** it's part of `task check:fast`, so the agent's finish hook, the pre-push hook and CI all run it (ADO-4, ADO-5). It fails on four things. The first two judge only *new* stamps, which are those the pushed code doesn't have, so existing stamps are left alone:
+
+  | What | What it says |
+  |---|---|
+  | A new stamp that `task stamps` didn't hand out | `stamp 1793889041029 at internal/repository/accounts.go:52 wasn't handed out by task stamps` |
+  | A new repeat, such as a copied line | `stamp 1793889041028 is used 2 times: internal/repository/hot_cleanup.go:16, internal/repository/accounts.go:52` |
+  | A stamp from the future, so it can't have come from a clock | `stamp 1799999999999 at internal/repository/accounts.go:52 is in the future, so it didn't come from a clock` |
+  | A `__STAMP__` nobody filled | `internal/repository/accounts.go still has __STAMP__: run task stamps` |
+
+  Each message ends with what to do: replace the stamp with `__STAMP__` and run `task stamps`.
+
+**How the check knows where a stamp came from.** `task stamps` writes each stamp it hands out to `.git/stamps-issued`, which is never committed. A new stamp that isn't in that file was typed.
+
+**What "new" means.** The check compares the stamps in the working tree with the pushed code: the pushed commits that unpushed ones build on, or the current commit when nothing is unpushed. A project with no remote has nothing pushed, so its last commit stands in. So:
+- old repeats aren't reported;
+- a line that only moved keeps its stamp, because its stamp is already in the pushed code;
+- a stamp in an unpushed commit is still new, so committing doesn't get past the check.
+
+**What it can't catch.**
+- **It only knows where a stamp came from before it's pushed.** The record is on one clone. In CI everything is pushed, so CI only catches a `__STAMP__` left in the code and stamps from the future.
+- **Anyone can write to the record.** It stops a habit, not someone set on getting around it.
+- **It doesn't check tests.** A stamp other than `0` in a test file is left to review.
+- **Outside git it has nothing to compare with.** Then every stamp counts as new, so it reports every repeat, and it can't tell where a stamp came from.
 
 ## ERR-2 · Which errx functions to use
 

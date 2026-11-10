@@ -102,6 +102,7 @@ Your code, `go.mod`, `README.md` and `.gitignore` don't change, and `go list ./.
 | `task check` | Runs every check. This is what CI runs. |
 | `task check:fast` | Runs the checks that don't need the network, plus unit tests. This is what the hooks run. |
 | `task fmt` | Fixes formatting, and whatever else the linters can fix on their own. |
+| `task stamps` | Replaces each `__STAMP__` in the Go code with its own stamp, read from the clock (ERR-1). |
 | `task setup` | Writes `AGENTS.md` and `.golangci.yml`, and turns on the git hook. |
 
 **If the project already has a Taskfile,** add to it by hand.
@@ -239,6 +240,7 @@ An agent can ignore an instruction file, so `AGENTS.md` alone doesn't make anyth
 | leaves an old `AGENTS.old.md` unreviewed | `agents:check` | Review it, and delete it |
 | adds a `CLAUDE.md` with its own text | `agents:check` | Move its text into `AGENTS.md`, and leave only `@AGENTS.md` |
 | edits `.golangci.yml` to turn a linter off | `lint:config:check` | Run `task lint:config` |
+| types a stamp, or copies one | `stamps:check` | Replace it with `__STAMP__`, and run `task stamps` |
 | commits an edit to anything in `.standards/` | `standards:drift` | Undo the edit |
 | breaks a rule a tool checks | `lint` or the tests | The rule and the line |
 
@@ -336,6 +338,7 @@ Following one cancel request through those files:
 | [decisions.md](decisions.md) | What was decided, and the few things still parked | |
 | [RULES.md](RULES.md) | Every rule on one page, generated from the tables in each document. It's what an agent loads first. | |
 | [templates/](templates), [hooks/](hooks), [Taskfile.standards.yml](Taskfile.standards.yml) | What a project takes from here to make the rules mandatory ([Install](#install)) | |
+| [tools/stamps](tools/stamps) | The tool behind `task stamps` and `task stamps:check` (ERR-1) | |
 
 There are 157 rules. Each has an ID, so a review comment or an agent can cite one: "violates ERR-3".
 
@@ -343,7 +346,7 @@ There are 157 rules. Each has an ID, so a review comment or an agent can cite on
 
 - **Writing code:** read this README and the area you're touching. Each area starts with a rules-at-a-glance table, and every rule has a "do" and a canonical example.
 - **Reviewing:** cite rule IDs. A correction that keeps recurring is a sign the rule should be enforced by a tool. Add a check, not another comment.
-- **Agents:** load [RULES.md](RULES.md) and the area documents for what you're changing, and treat the canonical snippets as templates. Stamps in the snippets are examples only. Never copy or continue them: each new stamp comes from a clock (ERR-1).
+- **Agents:** load [RULES.md](RULES.md) and the area documents for what you're changing, and treat the canonical snippets as templates. Stamps in the snippets are examples only. Never copy or continue them: write `__STAMP__` and run `task stamps` (ERR-1).
 - **Adding it to a project:** follow [Install](#install).
 
 ## How it's enforced
@@ -356,9 +359,10 @@ From cheapest to most expensive:
 | Linter | golangci-lint v2 with 41 linters and 2 formatters, including depguard, forbidigo, wsl and the standard's own `requiredtag` and `wrapgaps` plugins. `task lint` builds it | Ready ([config](lint/.golangci.yml), plugins: [requiredtag](lint/requiredtag), [wrapgaps](lint/wrapgaps)) |
 | Architecture test | A shared, table-driven `internal/architecture` test that encodes the layer table, naming bans and test hygiene. [LAY-7](01-project-layout.md) has its table. | To build |
 | Compiler | Unexported `stamp` and `eventName` types: only a literal stamp and a constant event name compile | errx does this. A project's `httperr` and `logger` packages do it by following ERR-1 and LOG-1 |
+| Stamp tool | `task stamps` hands out stamps from the clock, and `task stamps:check` fails on a new stamp it didn't hand out, a new repeat, a stamp from the future or a `__STAMP__` left in the code | Ready ([tools/stamps](tools/stamps)) |
 | Custom analyzers | `constquery` (constant queries), `repoverbs` (repository verbs) | To build |
 | Shared test helpers | `pagination.AssertStablePaging`, `AssertConcurrentUpdateConflicts`, the migrate-twice test, conformance suites | To build |
-| Standard's own checks | `AGENTS.md`, `.golangci.yml` and `.standards/` are intact, through `standards:check` | Ready ([Taskfile](Taskfile.standards.yml)) |
+| Standard's own checks | `AGENTS.md`, `.golangci.yml`, `.standards/` and new stamps, through `standards:check` | Ready ([Taskfile](Taskfile.standards.yml)) |
 | CI | `task check`: the standard's own checks, test, build and vuln, plus arch and `generate:check` as a project has them, in any CI that can run a command | Each project sets it up (ADO-5) |
 | Review | What tools can't decide: abstraction fit, naming quality, comment quality | Ongoing |
 

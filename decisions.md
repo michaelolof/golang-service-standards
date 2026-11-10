@@ -47,6 +47,7 @@ These haven't been decided, and nothing enforces them yet.
 | How are binaries named? | Short roles: `api`, `admin-api`, `worker` (LAY-1). |
 | Can one binary run several processes? | Yes (LAY-4). |
 | Do transports call repositories directly? | Yes, when the capability has no service. A service exists only when it's justified and approved (LAY-6, HTTP-3). |
+| What goes in `main.go`? | `main` and `run`, and nothing else. Configuration types go in `config.go`, wiring in `wire.go` (LAY-2, LAY-3). |
 
 ## Style
 
@@ -61,6 +62,7 @@ These haven't been decided, and nothing enforces them yet.
 | Which naming conventions? | `Store` and `Repo`, `<Op>Args` and `<Op>Result`, and UPPER_SNAKE enum values. |
 | How does a logged error say who it affects? | With `subject_id` and `subject_ref`. The HTTP encoder defaults to the signed-in caller, and decorators name anyone else. Where the code can't know, it stays empty (ERR-13). |
 | Are existing enum wire values frozen? | Not on a `greenfield` scope. On an `existing` scope, renaming one is a breaking change (STY-2, DOM-6, COL-15). |
+| How are header fields in gofi schemas tagged? | Lowercase kebab-case, as the header is sent, such as `json:"x-request-id"` (STY-4, gofi TAG-2). The lint config lets any lowercase kebab-case name through, because tagliatelle can't tell a header struct apart. |
 
 ## Domain
 
@@ -71,13 +73,16 @@ These haven't been decided, and nothing enforces them yet.
 | Are domain types the one type used across every boundary? | Yes, between layers. `domain` imports no driver (DOM-4). |
 | Are database schema types domain types? | No, whatever the database. A schema type is private to the repository, and its fields may use domain types (DATA-2). |
 | Does enumx guarantee an order? | No. `Values()` comes from a map, so code that needs an order sorts (DOM-6). |
+| Where may an interface be declared away from its consumer? | In `ports/` when several packages share it, and in `foundation/` for the few every layer uses, such as `clock.Clock` (ABS-1). |
+| Does gofi's `Deps` follow ABS-1's limit of 7 methods? | No. It has one accessor for each dependency, as gofi DEP-2 requires, and is the one interface with no limit. Its accessors may return interfaces. Its constructor returns a struct (ABS-1, ABS-2). |
+| May a function return gofi's interfaces, such as `gofi.Router`? | Yes. ireturn allows them (ABS-2). |
 
 ## Errors and logging
 
 | Question | Decision |
 |---|---|
-| How are stamps created? | Read from a clock, as the Unix time in milliseconds. A stamp has no meaning, so it's never ordered, numbered or versioned, and an edit may overwrite it. No tool and no uniqueness check (ERR-1). |
-| Do we build linters for stamps and event names? | No. The compiler enforces a literal stamp and a constant event name (ERR-1, LOG-3). |
+| How are stamps created? | By `task stamps`, which reads the clock, as the Unix time in milliseconds, wherever `__STAMP__` is written. Nobody types one, because agents told to read a clock still counted upward. A stamp has no meaning, so it's never ordered, numbered or versioned, and an edit may replace it (ERR-1). |
+| Do we build linters for stamps and event names? | No linter. The compiler enforces a literal stamp and a constant event name (ERR-1, LOG-3). `task stamps:check` fails on a new stamp `task stamps` didn't hand out, or a new repeat. It only judges new stamps, so existing ones need no sweep (ERR-1). |
 | Where do error kinds live? | Generic ones are shared, specific ones sit beside their owner (ERR-5). |
 | Does every error response include `retryable`? | Yes (ERR-7). |
 | Are the errors from gofi's `c.Next()` and `c.Send()` wrapped? | No. Their errors go back unchanged, and lint's ignore list grows by those two methods only (ERR-3). |
@@ -112,6 +117,8 @@ These haven't been decided, and nothing enforces them yet.
 | Where are queries declared? | Inside the method that runs them, unless several methods share them (DATA-5). |
 | Can searches with many optional filters build SQL dynamically? | No need. Fixed queries return the same rows (DATA-5). |
 | Are cursors signed? | They carry a filter fingerprint, with no signature (DATA-9). |
+| How is "no cursor" written? | As the zero `Cursor`, checked with `IsZero()`, never a nil pointer. `Decode("")` returns the zero `Cursor` (DATA-9). |
+| Do Redis queue keys have a TTL? | No. Item keys (cache, lock, rate limit, state) have one. A queue key (stream, schedule, dead-letter queue) states a bound instead, and versions its entries rather than its name (DATA-10). |
 | Which records get a `Version` column? | Only those edited outside their state transitions. |
 
 ## Testing

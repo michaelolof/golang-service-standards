@@ -28,7 +28,7 @@ Generated from the "Rules at a glance" tables. Don't edit it by hand. Each docum
 | STY-1 | Format with gofumpt and order imports with gci in three groups. Every project uses one shared lint config. |
 | STY-2 | Names follow the [naming table](#sty-2--naming). |
 | STY-3 | Guard clauses first. Split a function only where a part is its own idea. No length limit; complexity 20, nesting 4, 6 parameters, 3 results. A field tagged `lint:"required"` or `validate:"required"` must be set in every literal. |
-| STY-4 | Structs: identity, then data, then timestamps. A named `mu` sits above the fields it guards. Tags in a fixed order, snake_case JSON. |
+| STY-4 | Structs: identity, then data, then timestamps. A named `mu` sits above the fields it guards. Tags in a fixed order, snake_case JSON, and lowercase kebab-case header names. |
 | STY-5 | Doc-comment every exported identifier. Explain *why*. No step narration, plan references or bare TODOs. |
 | STY-6 | Declaration order in a file: consts, vars, type, `New`, exported methods, unexported methods, helpers. |
 | STY-7 | Use modern Go: `any`, `range n`, `new(v)`, `slices`/`maps`, `min`/`max`, `wg.Go`. |
@@ -46,8 +46,8 @@ Generated from the "Rules at a glance" tables. Don't edit it by hand. Each docum
 | DOM-5 | Value objects come from `New…`/`Parse…` returning an error. Entities have `Validate() error`. |
 | DOM-6 | Closed sets are enumx types declared one way, with `Parse`, `Validate` and a sorted `Oneof`. |
 | DOM-7 | One enum and one transition table per state machine. State changes only via `TransitionTo`. |
-| ABS-1 | One interface per dependency per consuming package, declared there, typed only with domain and stdlib types. No interface without a consumer and an implementation. |
-| ABS-2 | Implementations assert the interface they satisfy and return concrete types. |
+| ABS-1 | One interface per dependency per consuming package, declared there, typed only with domain and stdlib types. No interface without a consumer and an implementation. gofi's `Deps` is the one interface with no method limit. |
+| ABS-2 | Implementations assert the interface they satisfy and return concrete types. Only gofi's `Deps` accessors and functions returning gofi's own interfaces return an interface. |
 | ABS-3 | Name by role: `-er`, `Store`, domain nouns. Never `I*`, `*Iface`, `*Impl`, `*Adapter` or `*Manager`. |
 | ABS-4 | Pure rules are free functions. Orchestration lives in one `Service` per capability. |
 | ABS-5 | `New(Deps) (*Service, error)`, validated. No `With*` mutators, exported mutable fields or silent no-op defaults. |
@@ -60,7 +60,7 @@ Generated from the "Rules at a glance" tables. Don't edit it by hand. Each docum
 
 | ID | Rule |
 |---|---|
-| ERR-1 | Every errx, httperr and log call takes a stamp: the Unix time in milliseconds, as a plain literal, read from a clock. A stamp has no meaning, so it's never ordered, numbered or versioned. |
+| ERR-1 | Every errx, httperr and log call takes a stamp: the Unix time in milliseconds, as a plain literal. Nobody types one: write `__STAMP__` and run `task stamps`, which reads the clock. A stamp has no meaning, so it's never ordered, numbered or versioned. |
 | ERR-2 | Create, wrap and classify errors with errx, and inspect them with stdlib `errors.Is/As/Join`. Only the errx functions ERR-2 names as forbidden are banned. |
 | ERR-3 | Wrap every error you return from a call exactly once with `errx.Wrap(stamp, err)`. The errors from gofi's `c.Next()` and `c.Send()` go back unchanged. |
 | ERR-4 | Create errors with `New*`, and add a kind only if someone branches on it. Messages are lowercase, describe the condition, use `key=%q`, and contain no PII. |
@@ -117,7 +117,7 @@ Generated from the "Rules at a glance" tables. Don't edit it by hand. Each docum
 | DATA-7 | Optimistic concurrency uses a version column with an atomic compare-and-set. A CAS is never read-then-write. |
 | DATA-8 | Idempotency keys are unique per tenant in the primary store. `CreateOrGet` returns `created bool`. |
 | DATA-9 | One `pagination` package handles keyset cursors with a tie-breaker and a filter fingerprint. Driver page tokens never leave the repository. |
-| DATA-10 | A cache is a decorator that implements the same port as the repository. Redis code is split into one package per role, and keys follow a fixed format. |
+| DATA-10 | A cache is a decorator that implements the same port as the repository. Redis code is split into one package per role. Keys follow a fixed format: item keys have a TTL, and queue keys have a stated bound instead. |
 | DATA-11 | Migrations are timestamped, forward-only and safe to re-run, live in `db/migrations`, and run only from the migrate tool. |
 | DATA-12 | Split large files by aggregate, then by concern. |
 

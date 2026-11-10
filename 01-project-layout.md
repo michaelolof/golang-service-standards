@@ -98,6 +98,8 @@ var Files embed.FS
 3. Log the error.
 4. Exit non-zero on failure.
 
+`main` and `run` are the only declarations in `main.go`. Configuration types go in `config.go`, and wiring in `wire.go` (LAY-3).
+
 **Why.**
 
 - `os.Exit` skips deferred calls. Calling it after `defer` leaks resources, or forces cleanup to be duplicated by hand.

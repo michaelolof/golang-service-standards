@@ -24,8 +24,9 @@ For a security audit, follow `.standards/security-audit.md`.
 A task isn't `completed` until `task check` passes. Never edit `.standards/`. On a new clone, run
 `task setup` once.
 
-A stamp is the current Unix time in milliseconds, read from a clock for each new stamp. It has no
-meaning. Never order it, number it, version it, or work it out from nearby stamps.
+Never type a stamp. Write `__STAMP__` where one belongs, then run `task stamps`, which reads the clock
+for each one. A stamp has no meaning. Never order it, number it, version it, or work it out from
+nearby stamps. To change a stamp, replace it with `__STAMP__` and run `task stamps` again.
 
 Don't restructure existing tests. They're the guardrails during a refactor.
 
