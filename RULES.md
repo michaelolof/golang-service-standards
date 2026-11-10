@@ -52,7 +52,7 @@ Generated from the "Rules at a glance" tables. Don't edit it by hand. Each docum
 | ABS-4 | Pure rules are free functions. Orchestration lives in one `Service` per capability. |
 | ABS-5 | `New(Deps) (*Service, error)`, validated. No `With*` mutators, exported mutable fields or silent no-op defaults. |
 | ABS-6 | One method and one file per use case: `(ctx, XArgs) (XResult, error)`. |
-| ABS-7 | One adapter package per SDK. It wraps the SDK once, leaks no SDK types, and translates errors. |
+| ABS-7 | One adapter package per external system, with one file per role. It wraps the SDK once, leaks no SDK types, and translates errors. |
 | ABS-8 | Generics only for logic that doesn't depend on `T`. Never type-switch on `T`. |
 | ABS-9 | No functional options in services or adapters. No embedded concrete types. Registries are immutable and keyed by enums. |
 
@@ -117,7 +117,7 @@ Generated from the "Rules at a glance" tables. Don't edit it by hand. Each docum
 | DATA-7 | Optimistic concurrency uses a version column with an atomic compare-and-set. A CAS is never read-then-write. |
 | DATA-8 | Idempotency keys are unique per tenant in the primary store. `CreateOrGet` returns `created bool`. |
 | DATA-9 | One `pagination` package handles keyset cursors with a tie-breaker and a filter fingerprint. Driver page tokens never leave the repository. |
-| DATA-10 | A cache is a decorator that implements the same port as the repository. Redis code is split into one package per role. Keys follow a fixed format: item keys have a TTL, and queue keys have a stated bound instead. |
+| DATA-10 | A cache is a decorator that implements the same port as the repository. All Redis code is one adapter package, with one file per role. Keys follow a fixed format: item keys have a TTL, and queue keys have a stated bound instead. |
 | DATA-11 | Migrations are timestamped, forward-only and safe to re-run, live in `db/migrations`, and run only from the migrate tool. |
 | DATA-12 | Split large files by aggregate, then by concern. |
 

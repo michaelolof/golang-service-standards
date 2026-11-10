@@ -199,14 +199,47 @@ per group: RateLimit (pre-auth, by IP) → Authenticate → Authorize
 
 A project that adds tracing (OBS-1) puts its middleware right after RequestID.
 
-- **RequestID** accepts an inbound `X-Request-ID` only if it matches `^[A-Za-z0-9._-]{1,128}$`. Otherwise it generates a ULID. It echoes the ID in the response and adds `request_id` to the context's log attributes.
+- **RequestID** generates a new ULID for every request and ignores any `X-Request-ID` the client sends. It returns the ID in the `X-Request-ID` response header, so a client can quote it to support, and adds `request_id` to the context's log attributes.
+  - A reference the client chooses, such as an `Idempotency-Key` or the caller's own order ID, isn't a request ID. The endpoint declares it in its schema under its own name, validates it, and gives it its own log key if it needs one.
 - **ContextTimeout** is `gofimw.ContextTimeout(cfg.RequestTimeout)` (CTX-3).
 - **Authenticate** puts the principal on the request context, where the handler, the access log and the error handler get it from. The handler passes tenant and actor to core in `XArgs` (CTX-1). Since gofi v0.10.4, values set after `ContextTimeout` stay visible to both, without the timeout's deadline (tested).
 
 **Why.**
 - Without one order, each server drifts, and the same bug has to be found in each.
 - RequestID added per route group leaves operational routes with none.
-- RequestID that trusts any inbound `X-Request-ID` puts whatever a client sends into the logs and the response.
+- `request_id` exists to find every log line for one request. A client-chosen ID can't promise that. A caller can resend another request's ID, by mistake or on purpose, and one search for that ID then returns both requests. Checking the format doesn't help, because a reused ID is still valid.
+- A client's reference means something to the application, such as "don't charge twice". Sending it as `X-Request-ID` hides it in a transport header that every route accepts and no schema documents.
+
+**Don't.** Keep the client's ID when it looks valid:
+
+```go
+func requestID(c gofi.Context) string {
+	if rid := string(c.HeaderBytes("x-request-id")); validRequestID.MatchString(rid) {
+		return rid
+	}
+
+	return ulid.Make().String()
+}
+```
+
+**Do.**
+
+```go
+// internal/http/middleware/request_id.go
+// RequestID gives every request a new ID. It ignores any X-Request-ID the client sends.
+func RequestID(c gofi.Context) error {
+	rid := ulid.Make().String()
+	c.Writer().Header().Set("X-Request-ID", rid)
+
+	if err := gofi.SetRequestContext(c, logger.With(c.Context(), "request_id", rid)); err != nil {
+		return errx.Wrap(1794328333309, err)
+	}
+
+	return c.Next()
+}
+```
+
+The routes it runs in:
 
 ```go
 // internal/http/routes/routes.go

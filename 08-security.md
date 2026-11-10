@@ -452,7 +452,7 @@ gosec G404 enforces this.
   - cap the size of each file;
   - check the type with `http.DetectContentType` against an allowlist;
   - never trust the client's `Content-Type`.
-- Client correlation IDs are validated (`^[A-Za-z0-9._-]{1,128}$`) or replaced (HTTP-6).
+- The server ignores an inbound `X-Request-ID` and generates every request ID itself (HTTP-6), so no client value reaches `request_id` in the logs.
 
 **Don't.** The whole upload is read into memory and stored with the client's MIME type. There is no per-file size or type check.
 

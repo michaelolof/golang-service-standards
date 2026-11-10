@@ -29,7 +29,7 @@ This document builds on:
 | DATA-7 | Optimistic concurrency uses a version column with an atomic compare-and-set. A CAS is never read-then-write. | review, shared test |
 | DATA-8 | Idempotency keys are unique per tenant in the primary store. `CreateOrGet` returns `created bool`. | CI grep, review |
 | DATA-9 | One `pagination` package handles keyset cursors with a tie-breaker and a filter fingerprint. Driver page tokens never leave the repository. | forbidigo, shared test |
-| DATA-10 | A cache is a decorator that implements the same port as the repository. Redis code is split into one package per role. Keys follow a fixed format: item keys have a TTL, and queue keys have a stated bound instead. | depguard, review |
+| DATA-10 | A cache is a decorator that implements the same port as the repository. All Redis code is one adapter package, with one file per role. Keys follow a fixed format: item keys have a TTL, and queue keys have a stated bound instead. | depguard, review |
 | DATA-11 | Migrations are timestamped, forward-only and safe to re-run, live in `db/migrations`, and run only from the migrate tool. | CI test |
 | DATA-12 | Split large files by aggregate, then by concern. | arch test, review |
 
@@ -491,7 +491,7 @@ func Trim[T any](items []T, limit int, key func(T) Cursor) Page[T] // drops the 
 
 **Rule.** Any cache follows the cache-aside, failure and invalidation bullets. The other bullets apply if your project uses Redis. A project without Redis ignores them.
 - **Cache-aside is a decorator.** It implements the same consumer port as the repository and is wired in `cmd`. Core doesn't know the cache exists.
-- **One package per role:** `adapters/rediscache`, `redislock`, `redisratelimit`, `redisqueue`.
+- **One package:** all Redis code is in `adapters/redis`, over one client (ABS-7). Each role is a file: `cache.go`, `lock.go`, `ratelimit.go`, `queue.go`. Every key family is built in `keys.go`, so code that spans families, such as deleting a project's keys, needs nothing exported.
 - **Keys** come in two kinds, and each key family is one or the other:
 
   | | Item keys | Queue keys |
@@ -503,7 +503,7 @@ func Trim[T any](items []T, limit int, key func(T) Cursor) Page[T] // drops the 
 
   - Each key family is built by one unexported function, or one constant for a queue.
   - Use the `{<service>}` hash tag only for key families that multi-key Lua scripts touch.
-  - **A queue's bound** is written in its package comment, and the code keeps to it:
+  - **A queue's bound** is written in its type's doc comment, and the code keeps to it:
     - acknowledged entries are deleted, or the stream is trimmed with `MAXLEN` or `MINID`;
     - a dead-letter queue is trimmed by length or age;
     - an index entry is removed by the same script that removes its work.
@@ -513,6 +513,56 @@ func Trim[T any](items []T, limit int, key func(T) Cursor) Page[T] // drops the 
 - **Invalidation** happens after commit.
 - **Locks** use `SET NX PX` with an owner token, and Lua compare-then-delete or compare-then-renew.
 - **`redis.Nil`** is checked only with `errors.Is`, and only inside the adapter.
+
+**Do.** One package, one client, a file per role:
+
+```text
+internal/adapters/redis/
+  redis.go       package doc, Config, and New, which builds the one client
+  keys.go        every key family, unexported
+  cache.go       the cache decorators
+  lock.go        Lock
+  ratelimit.go   RateLimiter
+  queue.go       Queue, with its bound in its doc comment
+```
+
+```go
+// internal/adapters/redis/redis.go
+
+// Client is the one connection every type in this package uses.
+type Client struct {
+	rdb *goredis.Client
+}
+
+// New builds the client. It performs no network call.
+func New(cfg Config) (*Client, error) {
+	opts, err := goredis.ParseURL(string(cfg.URL.Reveal()))
+	if err != nil {
+		// The URL carries the password, so the parse error isn't kept.
+		return nil, errx.New(1794333571966, "redis URL is not a valid redis:// or rediss:// URL")
+	}
+
+	opts.PoolSize = cfg.PoolSize
+
+	return &Client{rdb: goredis.NewClient(opts)}, nil
+}
+
+// internal/adapters/redis/lock.go
+
+// NewLock builds a Lock on the shared client.
+func NewLock(c *Client, ttl time.Duration) *Lock {
+	return &Lock{rdb: c.rdb, ttl: ttl}
+}
+
+// cmd/services/api/wire.go
+rdb, err := redis.New(redis.Config{URL: cfg.Redis.URL, PoolSize: cfg.Redis.PoolSize})
+if err != nil {
+	return errx.Wrap(1794333577763, err)
+}
+
+locks := redis.NewLock(rdb, 30*time.Second)
+limits := redis.NewRateLimiter(rdb)
+```
 
 **Do.** A read-through decorator that implements the port, where a cache failure never fails the request:
 
@@ -537,7 +587,8 @@ return 0`)
 ```
 
 **Don't.**
-- Caches, queues, schedulers, rate limiters, locks and a circuit breaker in one 44-file `adapters/redis` package, with mixed key prefixes: `{webhooks}:…`, `rl:`, `cb:` and `worker:`.
+- Six Redis packages split by role (`rediscache`, `redislock`, `redisqueue` and three more), plus a seventh, `redisclient`, that only shares the one client between them. The queue package deletes the cache's keys through an exported `rediscache.ProjectKeys`.
+- Key families with mixed prefixes: `{webhooks}:…`, `rl:`, `cb:` and `worker:`.
 - Comparing with `err == goredis.Nil`. Use `errors.Is` instead.
 
 ## DATA-11 · Migrations

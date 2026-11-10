@@ -94,9 +94,9 @@ The naming decisions from every area are collected in this one table. When a nam
 | What | Convention | Example | Never | Rule |
 |---|---|---|---|---|
 | Package | Same as the directory: lowercase, one word | `transfers`, `mongostore` | `product_members`, an `apptime` package in directory `time` | LAY-8 |
-| Adapter package | `<tech><role>` | `kafkastream`, `s3store`, `rediscache` | `mongo`, `redis` (collide with the SDK) | LAY-8 |
+| Adapter package | The external system, one package per system. A database or object store adds `store` | `redis`, `kafka`, `awskms`, `mongostore`, `s3store` | `rediscache`, `redislock` (one system split by role); `mongo` (collides with the driver) | LAY-8, ABS-7 |
 | Helper packages | Name for what it provides. Shared by several packages: `foundation/<name>`. Incubating as a library: `pkg/<name>`. Used by one package: a file in that package. | `foundation/enumtag`, `foundation/ptr` | `util(s)`, `helper(s)`, `common`, `shared`, `misc`, `base`, `types`, `models`, `interfaces`, `*utils` | LAY-9 |
-| Test-helper package | `<pkg>test` | `domaintest`, `kafkastreamtest` | `testutil`, `testdata` (as Go code) | LAY-8, TEST-10 |
+| Test-helper package | `<pkg>test` | `domaintest`, `kafkatest` | `testutil`, `testdata` (as Go code) | LAY-8, TEST-10 |
 | File | snake_case, named after a type or use case | `cancel.go`, `transfer_transitions.go` | `helpers.go`, `utils.go`, `common.go`, `types.go` | LAY-10 |
 | Exported name | No stutter with the package name | `apikeys.Cache`, `delivery.Pipeline` | `apikeys.APIKeysCache`, `kms.KMSProvider` | STY-2 |
 | Initialisms | All in one case | `ID`, `URL`, `HTTP`, `JSON`, `ULID`, `KYC`, `DEK` | `HttpError`, `InvalidJsonErr`, `ById` | STY-2 |
@@ -114,7 +114,7 @@ The naming decisions from every area are collected in this one table. When a nam
 | Receiver | 1–2 letters from the type, the same on every method | `r *Repo`, `s *Service` | `self`, `this`, mixed names | STY-2 |
 | Boolean | Adjective or participle for state; `Is`/`Has`/`Can` for predicate functions | `Active`, `IsExpired()` | | STY-2 |
 | JSON tag | snake_case | `json:"transfer_id"` | camelCase | STY-4 |
-| Header tag, in a gofi schema's `Header` | lowercase kebab-case, as the header is sent | `json:"x-request-id"` | `json:"x_request_id"`, `json:"X-Request-ID"` | STY-4 |
+| Header tag, in a gofi schema's `Header` | lowercase kebab-case, as the header is sent | `json:"idempotency-key"` | `json:"idempotency_key"`, `json:"Idempotency-Key"` | STY-4 |
 | Log message | Dotted lowercase event, past tense | `job.attempt.failed` | `"Failed to process job %s"` | LOG-3 |
 | Log key | snake_case string literal | `"tenant_id"` | `"err"`, `"tenantId"` | LOG-2 |
 | Metric | `<svc>.<capability>.<noun>`, with a unit set and no suffix | `myservice.wallet.provision.duration` | `edge_request_duration_ms` | OBS-2 |
@@ -279,8 +279,8 @@ func (c *DeliveryOutcomeCoordinator) WithBacklogTracker(tracker ports.WarmCheckB
 
     ```go
     Header struct {
-    	ContentType string `json:"content-type" validate:"required"`
-    	RequestID   string `json:"x-request-id"`
+    	ContentType    string `json:"content-type" validate:"required"`
+    	IdempotencyKey string `json:"idempotency-key" validate:"required"`
     }
     ```
 

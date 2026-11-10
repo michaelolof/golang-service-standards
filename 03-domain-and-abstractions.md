@@ -31,7 +31,7 @@ If it does none of these, inline it. Most of the smells listed at the end of thi
 | ABS-4 | Pure rules are free functions. Orchestration lives in one `Service` per capability. | review |
 | ABS-5 | `New(Deps) (*Service, error)`, validated. No `With*` mutators, exported mutable fields or silent no-op defaults. | arch test |
 | ABS-6 | One method and one file per use case: `(ctx, XArgs) (XResult, error)`. | review |
-| ABS-7 | One adapter package per SDK. It wraps the SDK once, leaks no SDK types, and translates errors. | depguard, analyzer |
+| ABS-7 | One adapter package per external system, with one file per role. It wraps the SDK once, leaks no SDK types, and translates errors. | depguard, analyzer, review |
 | ABS-8 | Generics only for logic that doesn't depend on `T`. Never type-switch on `T`. | analyzer, review |
 | ABS-9 | No functional options in services or adapters. No embedded concrete types. Registries are immutable and keyed by enums. | embeddedstructfieldcheck, review |
 
@@ -539,21 +539,33 @@ func New(d Deps) (*Service, error) {
 ### ABS-7 · Adapters wrap one SDK, once
 
 **Rule.**
-- One package per technology and role (`adapters/<tech><role>`). It is the only importer of that SDK.
-- It takes its own `Config` struct (never the app config) and exposes `New(ctx, cfg) (*T, error)`, with no network I/O in `New`.
+- **One package per external system**, such as `adapters/redis`, `adapters/kafka` or `adapters/awskms`. It's the only package that imports that system's SDK.
+  - Each role the service uses the system for (cache, lock, rate limiter, queue, producer, consumer) is a file in that package, not a package of its own.
+  - Connection settings (address, TLS, credentials, pool size) are applied in one function. Where one client serves every role, as with Redis, there is one client, and every role type is built from it: `redis.NewLock(client, ttl)`. Where the SDK needs a client per role, such as a Kafka client per consumer group, that same function builds each one.
+  - A second package for the same system is right only for a second implementation of the same port that shares nothing with the first, such as a fake KMS for local development. A role, or the package's size, is not a reason.
+- It takes its own `Config` struct (never the app config) and exposes `New(cfg) (*T, error)`, with no network I/O in `New`. `New` takes a `ctx` first only when building the client needs one, as loading AWS config does.
 - No SDK type appears in any exported signature or field.
 - Every SDK error is translated to an errx kind, with the cause wrapped. See [04-errors.md](04-errors.md).
 - Don't add intermediate "client interface" layers. Test adapters against the real dependency.
 - Fakes are selected in `cmd`, never by a "mode" flag inside the production adapter.
-- Name the type for what it is (`s3store.Store`, `awskms.Wrapper`).
+- Name the type for what it is (`s3store.Store`, `awskms.Wrapper`, `redis.Lock`).
+
+**Why one package per system.** The roles share a client, its settings, the key names and often an encryption codec. Split by role, each of those needs its own way across package boundaries. In one codebase, six Redis packages split by role, over one client, brought:
+- a seventh package, `redisclient`, that only handed the client around;
+- a process-wide map, keyed by the client, to share an encryption codec, which eight places (six process startups and two test harnesses) each had to remember to fill;
+- exported key builders, so the queue package could delete the cache package's keys when a project was removed;
+- adapters importing other adapters, which the layer table doesn't allow (LAY-7).
+
+In another codebase, two Kafka packages wrote the broker and TLS setup four times.
 
 **Do.** This is the template, using AWS KMS as the example:
 
 ```go
+// internal/adapters/awskms/wrapper.go
 var _ ports.KeyWrapper = (*Wrapper)(nil)
 
 type Wrapper struct {
-	client *awskms.Client
+	client *kms.Client
 	kekARN string
 }
 
@@ -561,7 +573,7 @@ type Wrapper struct {
 func New(ctx context.Context, cfg Config) (*Wrapper, error) {
 // ...
 func (w *Wrapper) GenerateDataKey(ctx context.Context, args ports.GenerateDataKeyArgs) (ports.GenerateDataKeyResult, error) {
-	out, err := w.client.GenerateDataKey(ctx, &awskms.GenerateDataKeyInput{ /* ... */ })
+	out, err := w.client.GenerateDataKey(ctx, &kms.GenerateDataKeyInput{ /* ... */ })
 	if err != nil {
 		return ports.GenerateDataKeyResult{}, errx.WrapKind(1787900200002, crypto.ErrKindKeyWrapperUnavailable, err)
 	}

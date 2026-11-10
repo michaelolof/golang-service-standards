@@ -48,6 +48,7 @@ These haven't been decided, and nothing enforces them yet.
 | Can one binary run several processes? | Yes (LAY-4). |
 | Do transports call repositories directly? | Yes, when the capability has no service. A service exists only when it's justified and approved (LAY-6, HTTP-3). |
 | What goes in `main.go`? | `main` and `run`, and nothing else. Configuration types go in `config.go`, wiring in `wire.go` (LAY-2, LAY-3). |
+| How many adapter packages does one external system get? | One, named for the system. Each role (cache, lock, queue) is a file in it, over one client. A second package is only for a second implementation of the same port, such as a local fake (LAY-8, ABS-7, DATA-10). |
 
 ## Style
 
@@ -62,7 +63,7 @@ These haven't been decided, and nothing enforces them yet.
 | Which naming conventions? | `Store` and `Repo`, `<Op>Args` and `<Op>Result`, and UPPER_SNAKE enum values. |
 | How does a logged error say who it affects? | With `subject_id` and `subject_ref`. The HTTP encoder defaults to the signed-in caller, and decorators name anyone else. Where the code can't know, it stays empty (ERR-13). |
 | Are existing enum wire values frozen? | Not on a `greenfield` scope. On an `existing` scope, renaming one is a breaking change (STY-2, DOM-6, COL-15). |
-| How are header fields in gofi schemas tagged? | Lowercase kebab-case, as the header is sent, such as `json:"x-request-id"` (STY-4, gofi TAG-2). The lint config lets any lowercase kebab-case name through, because tagliatelle can't tell a header struct apart. |
+| How are header fields in gofi schemas tagged? | Lowercase kebab-case, as the header is sent, such as `json:"idempotency-key"` (STY-4, gofi TAG-2). The lint config lets any lowercase kebab-case name through, because tagliatelle can't tell a header struct apart. |
 
 ## Domain
 
@@ -104,7 +105,7 @@ These haven't been decided, and nothing enforces them yet.
 | Is `OperationId` set? | No. The method and path identify the route (HTTP-5). |
 | How do servers get limits? | One `r.Configure` call, with the usual `r.Listen` and `r.ShutdownWithContext` (SEC-17). |
 | What's the default request timeout? | 30s, with longer limits on streaming and export routes (CTX-3). |
-| Are inbound request IDs trusted? | Only if valid. Otherwise, generate one (HTTP-6). |
+| Are inbound request IDs trusted? | No. The server generates every request ID and ignores `X-Request-ID` from the client. A reference the client chooses, such as an idempotency key, is a field in that endpoint's schema (HTTP-6). |
 | What happens when a param can't be stored in its field? | A 500, and the handler doesn't run. |
 | Does a failed assertion inside `Decode` that isn't on the input stay a 500? | Yes. |
 | What's the background job contract? | One handler shape, and each queue technology stays (JOB-1). |

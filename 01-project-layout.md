@@ -313,7 +313,7 @@ Interfaces can also end up in three places: `internal/ports`, `domain/*_contract
 | `ports` (flat) | Interfaces consumed by **two or more** `core` packages, plus their argument and result types. No constructors | domain, foundation |
 | `core/<capability>` | Use-cases and business rules for one capability. Declares the interfaces only it consumes | domain, ports, foundation, other core (acyclic) |
 | `repository/<aggregate>` | Persistence for one aggregate in the service's primary database | domain, ports, foundation, `adapters/<primarydb>`, and the `core/<capability>` whose interface it implements (LAY-7) |
-| `adapters/<tech><role>` | Clients for every other external system: broker, cache, object store, KMS, email, chains, custody | domain, ports, foundation, and the `core/<capability>` whose interface it implements (LAY-7) |
+| `adapters/<system>` | Clients for every other external system, one package per system (ABS-7): broker, cache, object store, KMS, email, chains, custody | domain, ports, foundation, and the `core/<capability>` whose interface it implements (LAY-7) |
 | `http/…` | Inbound HTTP: `server`, `routes`, `deps`, `middleware`, `httperr`, `schemas`, `<api>/<resource>` handlers | core, repository, domain, ports, foundation |
 | `workers/<name>` | Inbound async work: queue jobs, stream consumers, schedulers | core, repository, domain, ports, foundation |
 | `testutils/<name>` | Shared test infrastructure | anything; imported only from `_test.go` |
@@ -451,7 +451,9 @@ var layers = []struct {
 - The package name equals the last path element: lowercase, one word, no underscores.
 - Name packages so importers never need an alias. Alias only when two imports in one file collide.
 - If importers habitually alias your package, rename it to the alias.
-- Adapter packages are named `<tech><role>` (`mongostore`, `kafkastream`, `redisqueue`, `s3store`), so they never collide with the SDK they wrap.
+- Adapter packages are named for the external system, one package per system (ABS-7): `redis`, `kafka`, `awskms`.
+  - A database or object store that holds the service's data adds `store`: `mongostore`, `crdbstore`, `s3store`. Repositories import it next to its driver, where `mongo` would collide with the driver's own package, and the `[tx]` lint exemption matches the suffix (DATA-4).
+  - An adapter that shares its name with its SDK's package aliases the SDK: go-redis is package `redis`, so `adapters/redis` imports it as `goredis`. This is the one alias that isn't for a collision between imports. Without it, `redis.Nil` inside `package redis` reads as the adapter's own.
 - The test-helper package for `x` is `xtest`, beside `x` (as `net/http/httptest` is).
 
 **Why.** Habitual aliases show packages named for their author, not their importer:
@@ -464,7 +466,7 @@ One codebase has 13 directories whose package name differs from the folder (`cor
 
 ```
 internal/adapters/mongostore/                    package mongostore
-internal/adapters/kafkastream/kafkastreamtest/   package kafkastreamtest
+internal/adapters/kafka/kafkatest/               package kafkatest
 internal/repository/executioncheckpoints/        package executioncheckpoints
 internal/http/admin/wallets/                     package wallets
 ```
