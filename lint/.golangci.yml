@@ -1,5 +1,6 @@
 # Shared golangci-lint config for Go services.
-# Validated on golangci-lint v2.15.0. It needs the custom binary that has the standard's plugins compiled in (requiredtag, wrapgaps).
+# Validated on golangci-lint v2.15.0. It needs the custom binary that has the standard's plugins compiled in:
+# requiredtag, wrapgaps, and the analyzers in lint/analyzers, which hold the structural checks (TEST-13).
 # In a project, `task lint` builds that binary and runs it (10-adoption.md, ADO-1).
 #
 # Rule IDs in comments (LAY-, DOM-, ABS-, ERR-, HTTP-, CTX-, CON-, LOG-, OBS-, DATA-, TEST-, STY-)
@@ -61,6 +62,25 @@ linters:
     # policy
     - forbidigo
     - depguard
+    # structure: the standard's own analyzers, in lint/analyzers (TEST-13)
+    - layers
+    - cmdshape
+    - names
+    - enums
+    - services
+    - adapters
+    - generics
+    - errkinds
+    - gofihandlers
+    - errmap
+    - jobs
+    - ctxkeys
+    - goroutines
+    - repos
+    - repoverbs
+    - constquery
+    - comments
+    - metricnames
     # tests (TEST-*)
     - testifylint
     - thelper
@@ -92,12 +112,12 @@ linters:
           arguments: [[], [ULID, KMS, DEK, JWT, KYC, OTP, SDK, DLQ, HMAC, PII, MFA, EVM]]
         - name: package-naming
           arguments:
-            - userDefinedBadNames: [helper, helpers, shared, base, models, model,
-                coreutils, timeutils, httputils, repoutil, testutil]
+            # The names analyzer reports any other name ending in util(s) or helper(s) (LAY-9).
+            - userDefinedBadNames: [helper, helpers, shared, base, models, model]
         - name: package-directory-mismatch
         - name: filename-format
           arguments: ["^[a-z0-9]+(_[a-z0-9]+)*\\.go$"]
-        - name: receiver-naming
+        - {name: receiver-naming, arguments: [{maxLength: 2}]} # STY-2: 1-2 letters from the type
         - name: error-naming
         - name: error-strings
         - name: time-naming
@@ -134,8 +154,7 @@ linters:
       # The default stable set stays on; it includes exitAfterDefer (LAY-2).
       enabled-checks:
         - commentedOutCode
-        - todoCommentWithoutDetail
-        - docStub
+        - docStub # the comments analyzer checks TODOs (STY-5)
         - deferInLoop
         - sloppyReassign
         - unnamedResult
@@ -174,6 +193,80 @@ linters:
         settings:
           extra-ignore-sigs: *wrap-ignore-sigs
           ignore-package-globs: *wrap-ignore-packages
+      # The structural checks. Each is its own linter, so an exception names the one it silences:
+      # //nolint:layers // reason. They take no settings: the module, the layer and each SDK's home come from the code.
+      layers:
+        type: module
+        description: 'Packages sit in a LAY-6 layer and import only what LAY-7 allows; each SDK has one home; Go lives in cmd, internal and pkg (LAY-1); test code stays in tests (TEST-13)'
+        original-url: ./analyzers
+      cmdshape:
+        type: module
+        description: 'main.go holds only main and run (LAY-2); each service has one wire function in wire.go (LAY-3)'
+        original-url: ./analyzers
+      names:
+        type: module
+        description: 'Banned package, file and type names, getters, constructors and error variables (LAY-9, LAY-10, ABS-3, ABS-6, STY-2)'
+        original-url: ./analyzers
+      enums:
+        type: module
+        description: 'enumx enums have a nil fallback, Parse, Validate, Oneof and UPPER_SNAKE variants (DOM-6)'
+        original-url: ./analyzers
+      services:
+        type: module
+        description: 'A core Service is built only by New(Deps) (*Service, error), with no exported fields or With methods (ABS-5)'
+        original-url: ./analyzers
+      adapters:
+        type: module
+        description: 'Adapters are built by New(cfg) (*T, error) and leak no SDK type (ABS-7)'
+        original-url: ./analyzers
+      generics:
+        type: module
+        description: 'No type switch on a type parameter (ABS-8)'
+        original-url: ./analyzers
+      errkinds:
+        type: module
+        description: 'Every errx.Kind is declared once, in foundation/errkinds, as ErrKind<Name> = "snake_case" (ERR-5)'
+        original-url: ./analyzers
+      gofihandlers:
+        type: module
+        description: 'Handlers follow gofi GUIDELINES.md: names, one per file, field order, schema placement, route info (HTTP-1, HTTP-2, HTTP-5)'
+        original-url: ./analyzers
+      errmap:
+        type: module
+        description: 'A handler returns its errors through httperr (ERR-7)'
+        original-url: ./analyzers
+      jobs:
+        type: module
+        description: 'Job handlers are named for their action and never inspect an error; job kinds are capability.action (JOB-1, ERR-8)'
+        original-url: ./analyzers
+      ctxkeys:
+        type: module
+        description: 'context.WithValue only in context.go, with unexported struct{} keys (CTX-2)'
+        original-url: ./analyzers
+      goroutines:
+        type: module
+        description: 'go statements only in foundation/supervise and pkg (CON-1, CON-2)'
+        original-url: ./analyzers
+      repos:
+        type: module
+        description: 'One package per aggregate with repo.go and row.go, exporting only Repo, with no SDK types in its methods (DATA-1, DATA-2)'
+        original-url: ./analyzers
+      repoverbs:
+        type: module
+        description: 'Repository methods use the standard verbs and do not repeat the package name (DATA-3)'
+        original-url: ./analyzers
+      constquery:
+        type: module
+        description: 'Repository statements are constants; no database clock; ON CONFLICT names its target (DATA-5, DATA-6, DATA-8, SEC-15)'
+        original-url: ./analyzers
+      comments:
+        type: module
+        description: 'Comments use ASCII punctuation, refer to no plans or steps, and give every TODO a ticket (STY-5)'
+        original-url: ./analyzers
+      metricnames:
+        type: module
+        description: 'Instruments are named <svc>.<capability>.<noun> with a unit (OBS-2)'
+        original-url: ./analyzers
     funcorder: {constructor: true, struct-method: true, alphabetical: false}
     embeddedstructfieldcheck: {forbid-mutex: true} # ABS-9
     modernize:
@@ -204,6 +297,11 @@ linters:
           pkg: '^github\.com/michaelolof/errx$'
           msg: "[errx] see ERR-2 for what to use instead"
         - {pattern: '^panic$', msg: "[panic] return an error (ERR-11)"}
+        - {pattern: '^recover$', msg: "[recover] recover only at a root: the outermost middleware, the job dispatcher or goSafe, with //nolint:forbidigo and the reason (ERR-11)"}
+        - {pattern: '^ulid\.(Make|New|MustNew)$', pkg: '^github\.com/oklog/ulid(/v2)?$', msg: "[ids] new IDs come from the injected ids.Generator (DOM-1, TEST-12)"}
+        - {pattern: '^uuid\.(New|NewString|NewRandom|NewV7|Must)$', pkg: '^github\.com/google/uuid$', msg: "[ids] new IDs come from the injected ids.Generator (DOM-1, TEST-12)"}
+        - {pattern: '^gocql\.(TimeUUID|RandomUUID)$', pkg: '^github\.com/gocql/gocql$', msg: "[ids] new IDs come from the injected ids.Generator (DOM-1, TEST-12)"}
+        - {pattern: '\.UseIssueAsMsg$', msg: "[httperr-issue] only httperr.Map sends an error's own message to a client (ERR-7)"}
         - {pattern: '^logger\.(Infof|Warnf|Errorf|InfoT|WarnT|ErrorT|Wrapf?|WrapErrorf?)$', msg: "[logger] legacy logger API (LOG-1)"}
         - {pattern: '^slog\.(Debug|Info|Warn|Error|Log|LogAttrs)(Context)?$', msg: "[slog] log through internal/foundation/logger: logger.Info(stamp, ctx, event, ...) (LOG-1)"}
         - {pattern: '^slog\.(New|Default|SetDefault)$', msg: "[slog] the process logger is set up once by logger.Initialize (LOG-1)"}
@@ -228,6 +326,8 @@ linters:
             - {pkg: github.com/hibiken/asynq, desc: drivers live in adapters}
             - {pkg: github.com/aws/aws-sdk-go-v2, desc: SDKs live in adapters}
             - {pkg: github.com/minio/minio-go, desc: SDKs live in adapters}
+            - {pkg: github.com/aws/smithy-go, desc: SDKs live in adapters}
+            - {pkg: github.com/apache/cassandra-gocql-driver, desc: drivers live in adapters/repository}
         http-confinement:
           list-mode: lax
           files: ["$all", "!**/internal/http/**", "!**/cmd/**"]
@@ -252,6 +352,12 @@ linters:
           deny:
             - {pkg: go.opentelemetry.io/otel/sdk, desc: setup lives in foundation/telemetry}
             - {pkg: go.opentelemetry.io/otel/exporters, desc: setup lives in foundation/telemetry}
+        otel-core: # OBS-1: core uses only the OTel API; instrumentation lives at the edges
+          list-mode: lax
+          files: ["**/internal/core/**"]
+          deny:
+            - {pkg: go.opentelemetry.io/contrib, desc: contrib instrumentation lives in adapters and http middleware}
+            - {pkg: go.opentelemetry.io/otel/propagation, desc: propagation lives in http middleware and the job runtime}
         test-libraries:
           list-mode: lax
           files: ["$all"]
@@ -279,14 +385,16 @@ linters:
     warn-unused: false # one shared file; some rules are idle in some repos
     paths:
       - '(^|/)(testutil|testutils|testdata)/' # test helpers, paused with the tests (TEST-14)
-      - '^tests?/'
+      - '^test/' # black-box suites (TEST-1)
     rules:
       - path: '_test\.go'
         linters: [gocognit, wrapcheck, musttag, gosec, ireturn, containedctx, errname, requiredtag]
       - path: '_test\.go'
         linters: [revive]
         text: '^(exported|argument-limit|function-result-limit|max-control-nesting):'
-      - {path: '_test\.go', linters: [forbidigo], text: '\[(errs|ctx|sleep|panic)\]'}
+      - {path: '_test\.go', linters: [forbidigo], text: '\[(errs|ctx|sleep|panic|recover|ids)\]'}
+      - {path: '^internal/(foundation/ids|adapters)/', linters: [forbidigo], text: '\[ids\]'} # DOM-1: the generator, and a store adapter's own
+      - {path: '/httperr/', linters: [forbidigo], text: '\[httperr-issue\]'}
       - {path: '^(cmd|internal/config)/', linters: [forbidigo], text: '\[env\]'}
       - {path: '^cmd/', linters: [forbidigo], text: '\[ctx\]'}
       - {path-except: '(^internal/(domain|core)/|(^|/)[a-z]*test/)', linters: [forbidigo], text: '\[clock\]'}
@@ -296,7 +404,7 @@ linters:
       # ERR-7: httperr's constructors return *httperr, so WithMsg and WithSubject chain without an interface.
       - {path: '/httperr/', linters: [revive], text: '^unexported-return:'}
       # LAY-1: pkg/ libraries follow Go conventions, not the ones here (errx, the logger package, wrapcheck stamps).
-      - {path: '^pkg/', linters: [forbidigo], text: '\[(errs|errx|logger|ctx)\]'}
+      - {path: '^pkg/', linters: [forbidigo], text: '\[(errs|errx|logger|ctx|recover|ids)\]'}
       # LOG-1: only the logger package and main touch slog; the logger's own functions take the stamp before ctx.
       - {path: '^(internal/foundation/logger|cmd)/', linters: [forbidigo], text: '\[slog\]'}
       - {path: '^internal/foundation/logger/', linters: [revive], text: 'context-as-argument'}

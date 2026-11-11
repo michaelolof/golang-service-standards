@@ -12,30 +12,30 @@ The short version: no hard-coded secrets, no secrets in logs, no tenant IDs from
 
 | ID | Rule | Enforced by |
 |---|---|---|
-| SEC-1 | API keys have at least 256 random bits, are stored as a peppered HMAC, and are checked for status and expiry on every request. A cached auth result lives at most 60 s and is evicted on revoke. | review, shared test |
+| SEC-1 | API keys have at least 256 random bits, are stored as a peppered HMAC, and are checked for status and expiry on every request. A cached auth result lives at most 60 s and is evicted on revoke. | project test, review |
 | SEC-2 | Access tokens are short-lived and fully validated. Refresh tokens are opaque, stored hashed, rotated on use, and revocable. Session tokens never appear in URLs. | review |
 | SEC-3 | Passwords use Argon2id through one package. Login takes the same time for unknown users, and is rate-limited before authentication in a shared store. | review |
 | SEC-4 | OAuth and OIDC flows use PKCE, and state that's single-use, short-lived and bound to the browser, user and resource. Verifiers and client secrets stay on the server. JWKS and token responses are size-bounded. | review |
-| SEC-5 | Tenant and org come only from the principal. Middleware checks the parent resource in the URL first. Tenant-data repository methods take a typed scope; an empty scope is an error, never "all". | arch test, review |
-| SEC-6 | Permissions are deny-by-default, checked per route group, and denials are audited. Config, secrets, members and roles need the right role, not just membership. | server test |
-| SEC-7 | Secrets are loaded once, into a type that redacts itself. Outside development, config validation rejects dev defaults, dev-only adapters and disabled TLS checks. | config test |
+| SEC-5 | Tenant and org come only from the principal. Middleware checks the parent resource in the URL first. Tenant-data repository methods take a typed scope; an empty scope is an error, never "all". | review |
+| SEC-6 | Permissions are deny-by-default, checked per route group, and denials are audited. Config, secrets, members and roles need the right role, not just membership. | project test (route table) |
+| SEC-7 | Secrets are loaded once, into a type that redacts itself. Outside development, config validation rejects dev defaults, dev-only adapters and disabled TLS checks. | project test (config) |
 | SEC-8 | Never log tokens, links that contain tokens, request bodies, or personal data. Log IDs. | the handler's `ReplaceAttr`, review |
 | SEC-9 | Encryption at rest is AEAD through one helper: random nonce, AAD that binds the ciphertext to its owner, versioned envelope, KMS data keys. | review |
-| SEC-10 | Webhook signatures are HMAC-SHA256 over timestamp and body, verified in constant time within a ±5 min window. A missing secret is a failure, never a skip. | shared test |
+| SEC-10 | Webhook signatures are HMAC-SHA256 over timestamp and body, verified in constant time within a ±5 min window. A missing secret is a failure, never a skip. | project test |
 | SEC-11 | `crypto/rand` for anything an attacker could guess. `math/rand/v2` only for jitter. | gosec G404 |
 | SEC-12 | Every server and upload route sets a body limit. Uploads check size and sniffed type. | review |
 | SEC-13 | Customer-supplied URLs go through the shared SSRF client. Every HTTP client has a timeout, a bounded body read, and no redirects unless needed. | depguard, review |
-| SEC-14 | TLS verification is never switched off in production. | gosec G402, config test |
+| SEC-14 | TLS verification is never switched off in production. | gosec G402, project test (config) |
 | SEC-15 | Values are bound as parameters. Identifiers come from code. JSON, SQL, CQL and Lua are never built with `fmt`. | `constquery`, forbidigo, gosec |
-| SEC-16 | Clients see only messages written for clients. Authentication failures get one generic message. | golden test |
-| SEC-17 | Every server sends security headers, names its CORS origins, and sets read, write and idle timeouts and a connection limit. | server test |
+| SEC-16 | Clients see only messages written for clients. Authentication failures get one generic message. | project test (golden body) |
+| SEC-17 | Every server sends security headers, names its CORS origins, and sets read, write and idle timeouts and a connection limit. | project test (server) |
 | SEC-18 | `govulncheck` blocks CI. The Go patch version is pinned. Test infrastructure never ships in production packages. | CI |
-| SEC-19 | Every ID in a path, body or payload is checked against the caller. Another tenant's object gets the same answer as a missing one. | shared two-tenant test |
-| SEC-20 | Each kind of token does one job, and every parser checks the kind. Halfway through sign-in, the caller can only finish signing in. Sensitive actions ask for verification again. | shared test |
-| SEC-21 | Invitations need the invited, verified email. OAuth links to an existing account only on a verified provider email. Claims and redemptions are atomic. | shared test, review |
+| SEC-19 | Every ID in a path, body or payload is checked against the caller. Another tenant's object gets the same answer as a missing one. | project test (two tenants) |
+| SEC-20 | Each kind of token does one job, and every parser checks the kind. Halfway through sign-in, the caller can only finish signing in. Sensitive actions ask for verification again. | project test |
+| SEC-21 | Invitations need the invited, verified email. OAuth links to an existing account only on a verified provider email. Claims and redemptions are atomic. | project test, review |
 | SEC-22 | Typed request bodies list what a client may edit. Server-owned fields are never read from client JSON. | review |
-| SEC-23 | Identifiers that route inbound traffic are unique across tenants, proven with the provider, and enforced with a partial unique index. | migration test, review |
-| SEC-24 | Capability tokens and links are bound to their tenant and resource, expire, and are redeemed atomically when single-use. | shared test |
+| SEC-23 | Identifiers that route inbound traffic are unique across tenants, proven with the provider, and enforced with a partial unique index. | project test (migration), review |
+| SEC-24 | Capability tokens and links are bound to their tenant and resource, expire, and are redeemed atomically when single-use. | project test |
 | SEC-25 | Secrets stay out of URL errors, comparisons are constant-time, and GET endpoints don't return secrets to roles that don't need them. | review |
 | SEC-26 | Security audits follow `security-audit.md`: read-only until findings are approved, and a finding counts only once it's proven. | review |
 | SEC-27 | The project's primary dependencies are checked against attack publications, exploited-vulnerability lists and CVEs at least every 7 days. Their own dependencies aren't looked up. `security-checks.md` records each run, and the next work to start runs any check that's due. | review |
@@ -148,7 +148,7 @@ The risk that remains is that one forgotten check on a new parser would let a to
 
 **Do.** Changing a password checks the current one first.
 
-**Test.** A shared test sends every kind of token to the session middleware, and expects a 401 for everything except a session token.
+**Test.** A project test sends every kind of token to the session middleware, and expects a 401 for everything except a session token.
 
 ### SEC-21 · Sign-up, invitations and account linking
 
@@ -226,12 +226,12 @@ if args.TenantID != "" {
 }
 ```
 
-**Enforced by** an arch test: an exported repository method whose name doesn't end in `AnyScope` must take a scope parameter.
+**Enforced by** review. Which repositories hold tenant data, and which type is a project's scope, differ from project to project, so a machine can't tell a method that's missing its scope from one that never needed one.
 
 ### SEC-6 · Permissions
 
 **Rule.**
-- Every route group declares its required permission or scope. A route without one is rejected by a server test that walks the route table.
+- Every route group declares its required permission or scope. A route without one is rejected by a project test that walks the route table.
 - Denials are audited.
 - Every change to integration config, secrets, webhooks, billing, members and roles needs the right role, usually admin, not just membership. Compare each route with the strictest route like it.
 - Every admin or staff route sits behind both the admin login and the right admin role.
@@ -261,7 +261,7 @@ memberRec, err := repo.GetProductMemberByProduct(ctx, productRec.ProductID, s.Re
 
 **Don't.** A missing invitation gets a 404. One issued to someone else gets a 403 saying "this invitation was not issued to your email address", so a caller can tell the two apart. Invitation IDs are UUIDs, so the risk is small, but it's the pattern this rule stops.
 
-**Test.** A shared test uses two tenants: tenant A requests tenant B's object, and the response must match a missing object's, byte for byte.
+**Test.** A project test uses two tenants: tenant A requests tenant B's object, and the response must match a missing object's, byte for byte.
 
 ### SEC-22 · Server-owned fields
 

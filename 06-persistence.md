@@ -20,18 +20,18 @@ This document builds on:
 
 | ID | Rule | Enforced by |
 |---|---|---|
-| DATA-1 | One package per aggregate, with a fixed set of files: `repo.go`, `row.go`, and one file per use case. | arch test |
-| DATA-2 | Repository methods take and return domain types. A database schema type isn't a domain type: it's private to the repository, and its fields may use domain types. One column list and one scan function per table, in `row.go`. | depguard, arch test |
-| DATA-3 | Method verbs come from a closed set, and names don't repeat the package name. | `repoverbs` analyzer |
+| DATA-1 | One package per aggregate, with a fixed set of files: `repo.go`, `row.go`, and one file per use case. | `repos`, review |
+| DATA-2 | Repository methods take and return domain types. A database schema type isn't a domain type: it's private to the repository, and its fields may use domain types. One column list and one scan function per table, in `row.go`. | depguard, `repos`, review |
+| DATA-3 | Method verbs come from a closed set, and names don't repeat the package name. | `repoverbs` |
 | DATA-4 | A change to several rows is one repository method named for the use case. Prefer one atomic statement (a CTE); otherwise the repository owns the transaction. Core never holds database semantics. | forbidigo, review |
-| DATA-5 | Every query is a constant, declared inside the method that runs it. It moves to package level only when several methods share it. | `constquery` analyzer, gosec |
-| DATA-6 | Time comes from the clock. SQL `now()` is never used. | CI grep |
-| DATA-7 | Optimistic concurrency uses a version column with an atomic compare-and-set. A CAS is never read-then-write. | review, shared test |
-| DATA-8 | Idempotency keys are unique per tenant in the primary store. `CreateOrGet` returns `created bool`. | CI grep, review |
-| DATA-9 | One `pagination` package handles keyset cursors with a tie-breaker and a filter fingerprint. Driver page tokens never leave the repository. | forbidigo, shared test |
+| DATA-5 | Every query is a constant, declared inside the method that runs it. It moves to package level only when several methods share it. | `constquery`, gosec, review |
+| DATA-6 | Time comes from the clock. SQL `now()` is never used. | `constquery` |
+| DATA-7 | Optimistic concurrency uses a version column with an atomic compare-and-set. A CAS is never read-then-write. | project test (concurrent update), review |
+| DATA-8 | Idempotency keys are unique per tenant in the primary store. `CreateOrGet` returns `created bool`. | `constquery`, review |
+| DATA-9 | One `pagination` package handles keyset cursors with a tie-breaker and a filter fingerprint. Driver page tokens never leave the repository. | forbidigo, project test (stable paging) |
 | DATA-10 | A cache is a decorator that implements the same port as the repository. All Redis code is one adapter package, with one file per role. Keys follow a fixed format: item keys have a TTL, and queue keys have a stated bound instead. | depguard, review |
-| DATA-11 | Migrations are timestamped, forward-only and safe to re-run, live in `db/migrations`, and run only from the migrate tool. | CI test |
-| DATA-12 | Split large files by aggregate, then by concern. | arch test, review |
+| DATA-11 | Migrations are timestamped, forward-only and safe to re-run, live in `db/migrations`, and run only from the migrate tool. | `tools/archcheck`, project test (migrate twice) |
+| DATA-12 | Split large files by aggregate, then by concern. | revive `file-length-limit`, review |
 
 ---
 
@@ -50,6 +50,8 @@ repository/transfers/
 ```
 
 **Why.** With a single repository package instead, one `ScyllaRepository` type grew to 186 methods and returned 35 exported `XxxRecord` types holding `gocql.UUID`.
+
+**Enforced by** the `repos` analyzer: `internal/repository` holds one package per aggregate and nothing else, not even shared helpers, which belong in the store adapter; each has `repo.go`, declaring `Repo` and `New`, and `row.go`; and `Repo` is its only exported type. One file per use case is for review.
 
 ## DATA-2 · Repositories read and write domain types
 
@@ -154,7 +156,8 @@ return doc.toDomain(), nil
 
 **Enforced by:**
 - depguard: `internal/domain` imports no driver (DOM-4);
-- an arch test: the only exported type in `internal/repository/*` is `Repo`.
+- the `repos` analyzer: `Repo` is the only exported type, and no exported `Repo` method takes or returns a type from an SDK, such as a `pgx.Tx`. `New` may take the driver's handle;
+- review, for one column list and one scan function per table.
 
 ## DATA-3 · Method verbs
 
@@ -176,6 +179,8 @@ return doc.toDomain(), nil
 
 - **Banned verbs:** `Insert`, `Fetch`, `Lookup`, `Load`, `Read`, `Save`, `Put`, `Search`.
 - **No stutter:** don't repeat the package name. Write `transfers.Repo.Get`, not `TransferRepo.GetTransfer`.
+
+**Enforced by** the `repoverbs` analyzer, on `Repo`'s exported methods: none starts with a banned verb, and none contains the package's name, plural or singular. Transition verbs are an open set, so only the banned verbs are reported.
 
 ## DATA-4 · Atomic work is one use-case-shaped repository method
 
@@ -334,7 +339,7 @@ func (r *Repo) Get(ctx context.Context, tenant domain.TenantRef, id domain.Trans
 - Use `bson.D` wherever order matters.
 
 **Enforced by:**
-- `constquery`, a custom analyzer. The query argument to pgx `Query`/`QueryRow`/`Exec` and to gocql `Session.Query` must be a constant expression.
+- the `constquery` analyzer: in a repository, the statement passed to a pgx, `database/sql` or gocql query method is a constant expression. A migration runner may run the statements it reads from files.
 - gosec G201 and G202 as a backstop.
 
 ## DATA-6 · Time comes from the clock
@@ -344,6 +349,8 @@ func (r *Repo) Get(ctx context.Context, tenant domain.TenantRef, id domain.Trans
 - Never use SQL `now()`, `current_timestamp` or `$currentDate`.
 
 **Why.** A repository layer's SQL called `now()` about 180 times. Those rows can't be tested deterministically, and their timestamps disagree with the times the service itself records.
+
+**Enforced by** the `constquery` analyzer: no constant statement passed to a query method contains `now()`, `current_timestamp` or `current_date`, and no string in the code is `$currentDate`.
 
 ## DATA-7 · Optimistic concurrency
 
@@ -379,7 +386,7 @@ func (r *ScyllaRepository) RotateDeliveryReceiptConfigSecretCAS(ctx context.Cont
 	if err := r.UpsertDeliveryReceiptConfigByProject(ctx, record); err != nil {
 ```
 
-**Enforced by** a shared integration helper, `testutils.AssertConcurrentUpdateConflicts(t, repo)`, required for every repository that has an `Update`.
+**Enforced by** a project test, `testutils.AssertConcurrentUpdateConflicts(t, repo)`, required for every repository that has an `Update`. The project writes the helper until the standard ships one (10-adoption).
 
 ## DATA-8 · Idempotency keys
 
@@ -388,6 +395,8 @@ func (r *ScyllaRepository) RotateDeliveryReceiptConfigSecretCAS(ctx context.Cont
 - `CreateOrGet` returns `(T, created bool, error)`. A replay that arrives with a different request hash returns `ErrKindConflict`.
 - Always name the conflict target in `ON CONFLICT (…)`. Without one, `DO NOTHING` also swallows a violation of any other unique constraint, and that hides bugs.
 - Redis may act as a fast first check, but never as the only guard.
+
+**Enforced by** the `constquery` analyzer, on `ON CONFLICT DO` with no target. The rest is for review.
 
 ```go
 func (r *Repo) CreateOrGet(ctx context.Context, t domain.Transfer, key domain.IdempotencyKey) (domain.Transfer, bool, error) {
@@ -485,7 +494,7 @@ func Trim[T any](items []T, limit int, key func(T) Cursor) Page[T] // drops the 
 **Enforced by:**
 - forbidigo on `PageState` under `internal/http/**` and `internal/core/**`. `base64` itself isn't banned, because webhook signature checks legitimately use it.
 - review, to keep cursor encoding inside `foundation/pagination`;
-- a shared test, `pagination.AssertStablePaging(t, list)`, required for every `List`. It inserts N rows with the same timestamp and pages through them with a small limit, checking there are no duplicates and no gaps.
+- a project test, `pagination.AssertStablePaging(t, list)`, required for every `List`. The project writes the helper until the standard ships one (10-adoption). It inserts N rows with the same timestamp and pages through them with a small limit, checking there are no duplicates and no gaps.
 
 ## DATA-10 · Redis and caching
 
@@ -608,7 +617,7 @@ return 0`)
 **Don't.** With no version table, every file is re-applied on every release.
 
 **Enforced by:**
-- a CI test that file names match `^\d{14}_[a-z0-9_]+\.up\.(sql|cql|json)$` and increase strictly;
+- `tools/archcheck`: every file in `db/migrations`, other than Go files, is named `^\d{14}_[a-z0-9_]+\.up\.(sql|cql|json)$`, and no two share a timestamp;
 - a required "migrate twice on a fresh DB" test.
 
 ## DATA-12 · Splitting large repository files

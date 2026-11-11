@@ -59,7 +59,9 @@ my-project/
 
 **The lint config is generated, not copied.** Two of its rules need the project's module path, and nobody may edit `.standards/`. So `task lint:config` writes `.golangci.yml` at the project root from the standard's copy, and `task lint:config:check` fails if someone edits it (tested). These two tasks use `sed` and `cmp`, which are on Linux and macOS, and on Windows with Git for Windows.
 
-**The linter builds itself.** The config needs the `requiredtag` and `wrapgaps` plugins, which a plain `golangci-lint` doesn't have. The first `task lint` builds golangci-lint v2.15.0 with the plugins compiled in, into `.standards/lint/bin/`. That takes about 20 seconds and needs network access. You don't install golangci-lint, and nothing is added to your `go.mod`. The folder is ignored by git, so it can't trigger the drift check. An upgrade that changes the linter's version or the plugin rebuilds it on the next run (all tested).
+**The linter builds itself.** The config needs the `requiredtag` and `wrapgaps` plugins and the structural analyzers in `lint/analyzers` (TEST-13), which a plain `golangci-lint` doesn't have. The first `task lint` builds golangci-lint v2.15.0 with them compiled in, into `.standards/lint/bin/`. That takes about 20 seconds and needs network access. You don't install golangci-lint, and nothing is added to your `go.mod`. The folder is ignored by git, so it can't trigger the drift check. An upgrade that changes the linter's version, a plugin or an analyzer rebuilds it on the next run, and clears golangci-lint's cache, which otherwise keeps replaying the old build's findings until a file changes (all tested).
+
+**The module checks run from the standard too.** `task archcheck`, part of `standards:check`, runs `tools/archcheck` from `.standards/` with `go run`, the way `task stamps` does. It type-checks the project with its tests, which takes a few seconds.
 
 ## ADO-2 · Nobody edits the copy
 
@@ -171,7 +173,7 @@ We tested this on Claude Code 2.1.314, with the template's settings file and a l
 
 ## ADO-5 · CI is the final check
 
-**Rule.** `task check` runs everything: `standards:check` (the `AGENTS.md` check, the lint config check, the stamp check, lint and the drift check), then the project's own tests and build. It's a required check on the default branch, so nothing merges while it fails. This is the only layer that works for every agent and every person.
+**Rule.** `task check` runs everything: `standards:check` (the `AGENTS.md` check, the lint config check, the stamp check, `archcheck`, lint with the structural analyzers, and the drift check), then the project's own tests and build. It's a required check on the default branch, so nothing merges while it fails. This is the only layer that works for every agent and every person.
 
 Any CI that can run a command will do. The job installs Go and Task, and runs one command:
 
@@ -222,6 +224,17 @@ New feature work waits until step 5.
 
 After changing a rule in the standard, run `go run ./tools/genrules` to update `RULES.md`. `go run ./tools/genrules -check` fails if it's out of date.
 
+### Upgrading to the release with the structural checks
+
+This release replaces each project's own architecture test with checks the standard ships: the analyzers in `lint/analyzers`, which `task lint` runs, and `tools/archcheck`, which `task standards:check` runs (TEST-13). In the upgrade PR:
+
+1. Delete `internal/architecture`, and the `arch` task, including `arch` in `check`'s `deps`. `task archcheck` fails while the folder exists, so a project can't keep two versions of the same rule.
+2. Delete any `Exception to LAY-7 and TEST-13:` under `## This project's own rules` in `AGENTS.md` that only existed while the standard had no shared checks.
+3. Run `task check`. Every check is on from the start: none is a warning first. A finding is fixed, or, if it's justified, recorded where it is with `//nolint:<analyzer> // reason`, agreed with the engineer (COL-7). An exception already written under `## This project's own rules` gets its `//nolint` at each site it covers. archcheck's findings have no exceptions: each is fixed.
+4. If the fixes are more than the upgrade PR can hold, stay on the old version and plan them as task-list items (ADO-6). The upgrade merges when `task check` passes.
+
+Why everything is on at once: a check that only warns is a check nobody acts on, and ADO-6 already asks an existing project to fix everything before it relies on the standard. The release notes list what the checks found in three codebases, so a team can size the work before starting.
+
 ## What's built and what isn't
 
 | Part | Status |
@@ -231,6 +244,5 @@ After changing a rule in the standard, run `go run ./tools/genrules` to update `
 | `task stamps` and `task stamps:check` | Done, and tested from `.standards/` on a clone of one project, and from the standard on two more |
 | Templates (`AGENTS.md`, `Taskfile.yml`, `claude-settings.json`), hooks, `standards:check` | Done, and tested |
 | The standard's first version tag | Done: `v0.1.0` |
-| Shared architecture test (`arch` in the Taskfile) | To build. Until then, the rules it enforces are checked in review. |
-| `constquery` and `repoverbs` analyzers | To build. Until then, the rules they enforce are checked in review. |
+| Structural checks: the analyzers in `lint/analyzers`, including `constquery` and `repoverbs`, and `tools/archcheck` (TEST-13) | Done, each with fixtures, and run on three codebases before release. A project keeps no `internal/architecture` and no `arch` task. |
 | Shared test helpers (`testharness`, `apitest`, `pagination.AssertStablePaging`, `testutils.AssertConcurrentUpdateConflicts`, the migrate-twice test, conformance suites) | To build. A project writes its own until then, from the descriptions in [07](07-testing.md) and [06](06-persistence.md). |

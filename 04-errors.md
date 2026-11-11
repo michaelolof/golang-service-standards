@@ -26,15 +26,15 @@ Application errors are created everywhere. A transport's errors are created only
 | ERR-2 | Create, wrap and classify errors with errx, and inspect them with stdlib `errors.Is/As/Join`. Only the errx functions ERR-2 names as forbidden are banned. | forbidigo |
 | ERR-3 | Wrap every error you return from a call exactly once with `errx.Wrap(stamp, err)`. The errors from gofi's `c.Next()` and `c.Send()` go back unchanged. | wrapcheck, `wrapgaps` |
 | ERR-4 | Create errors with `New*`, and add a kind only if someone branches on it. Messages are lowercase, describe the condition, use `key=%q`, and contain no PII. | forbidigo, review |
-| ERR-5 | Every application kind is declared in `foundation/errkinds`, with no per-package kinds and no `<pkg>_` prefix. A kind is added only when code branches on it, and choosing a message isn't a branch. Each transport has its own error domain with its own kinds. | arch test, review |
+| ERR-5 | Every application kind is declared in `foundation/errkinds`, with no per-package kinds and no `<pkg>_` prefix. A kind is added only when code branches on it, and choosing a message isn't a branch. Each transport has its own error domain with its own kinds. | `errkinds`, `tools/archcheck`, review |
 | ERR-6 | Driver and SDK errors are inspected and translated only in repositories and adapters, with `errors.Is/As` and `errx.WrapKind`. | depguard, errorlint |
-| ERR-7 | HTTP handlers return `httperr.Map(stamp, err)`, for bind errors too. One mapper, one typed response body. | arch test, golden test |
+| ERR-7 | HTTP handlers return `httperr.Map(stamp, err)`, for bind errors too. One mapper, one typed response body. | `errmap`, `layers`, forbidigo, project test (golden body) |
 | ERR-8 | Each job runtime has one mapping from kind to outcome. Handlers never choose an outcome. | review |
 | ERR-9 | Return an error or log it, never both. Log only at roots. | review |
 | ERR-10 | Discard close errors on readers. Join close errors on writers. Don't `Join` on paths that will be classified. | errcheck, review |
-| ERR-11 | No `panic` outside tests and `recover` roots. A recovered panic becomes an error with the panic's type and stack. | forbidigo, arch test |
+| ERR-11 | No `panic` outside tests and `recover` roots. A recovered panic becomes an error with the panic's type and stack. | forbidigo |
 | ERR-12 | `fmt.Errorf` and `errors.New` are allowed only in tests and in standalone library modules. | forbidigo |
-| ERR-13 | Every logged error says who it affects, wherever the code can know, as `subject_id` and `subject_ref`. The encoder defaults to the signed-in caller, and decorators name anyone else. IDs must be verified, never personal data, and never set on a shared error. | shared test, review |
+| ERR-13 | Every logged error says who it affects, wherever the code can know, as `subject_id` and `subject_ref`. The encoder defaults to the signed-in caller, and decorators name anyone else. IDs must be verified, never personal data, and never set on a shared error. | project test, review |
 
 ---
 
@@ -344,12 +344,12 @@ if err != nil {
 - Kinds named `XErr` collide visually with httperr's `NotFoundErr`, and kebab-case and snake_case strings get mixed.
 
 **Enforced by:**
-- an arch test. It collects every `errx.Kind` call in non-test code under `internal/` and `cmd/`, and asserts:
-  - every one is in `internal/foundation/errkinds`;
-  - unique strings;
-  - the naming pattern;
-  - at least one creation site and at least one non-test `IsKind` reference.
-- review, which checks that the reference is a branch and not a choice of message. The arch test can't tell the two apart.
+- the `errkinds` analyzer, on every `errx.Kind` call in code that isn't a test:
+  - it's in `internal/foundation/errkinds`, as a package variable;
+  - its name is `ErrKind<Name>`;
+  - its string is a snake_case literal that no other kind has.
+- `tools/archcheck`, across the module: each kind is created somewhere (`errx.NewKind`, `NewKindf`, `WrapKind` or `WrapKindf`), and checked somewhere (`errx.IsKind`), outside `errkinds` and tests. A kind passed anywhere else, such as into a mapping table, counts as both.
+- review, which checks that the check is a branch and not a choice of message, and that a string has no package prefix. A machine can't tell either apart.
 
 ## ERR-6 · Translate driver errors at the boundary
 
@@ -536,10 +536,11 @@ if err != nil {
 ```
 
 **Enforced by:**
-- forbidigo on `fmt.(Appendf|Sprintf)` in `httperr`;
+- the `errmap` analyzer: every error a handler returns is `nil`, a call into `httperr` such as `httperr.Map(stamp, err).WithMsg(...)`, a gofi `c.Send` or `c.Next`, or the error of a handler helper that takes the `gofi.Context`, whose own returns are checked the same way. Wrapping one of these once more with `errx.Wrap` is fine, because the encoder still finds the `*httperr`;
+- forbidigo on `fmt.(Appendf|Sprintf)` in `httperr`, and on `UseIssueAsMsg` outside it;
 - ireturn, on anything returning a named interface;
-- a golden test of the error body;
-- an arch test that only `internal/http/**` imports `httperr`.
+- the `layers` analyzer: only `internal/http` imports `httperr`, because no other layer may import `http` (LAY-7);
+- a project test that compares the error body with a golden file.
 
 ## ERR-8 · One outcome mapping per job runtime
 
@@ -652,6 +653,12 @@ defer func() {
 ```
 
 A panic has no underlying error, so `errx.Newf` creates one to carry the detail, and `httperr.Wrap` gives it an HTTP kind. ERR-3's "never wrap an error you created" is about `errx.Wrap`, which would only add a second stamp. A panic is an unknown error, so its code is `UNHANDLED_SERVER_ERROR` (ERR-7).
+
+**Enforced by** forbidigo, outside tests: `panic`, `errx.Must` and `errx.Panic` are banned, and so is `recover`, except at a root. Each root says so where it recovers:
+
+```go
+if r := recover(); r != nil { //nolint:forbidigo // the outermost middleware: a panic becomes an UNHANDLED_SERVER_ERROR (ERR-11)
+```
 
 ## ERR-12 · Stdlib error constructors
 
@@ -782,7 +789,7 @@ return httperr.Wrap(1793829836767, httperr.BadRequestErr, err).WithSubjectID(wal
 The encoder can read the principal because gofi runs the error handler on the same request. On gofi v0.10.5, it saw a principal set with `SetRequestContext` by a route group's middleware, including after a recovered panic. It saw none when that middleware rejected the request, or when no route matched (tested).
 
 **Enforced by:**
-- a shared test on the encoder: a signed-in route logs the caller, a decorator replaces the caller, a rejected request logs no subject, and the response body never contains one;
+- a project test on the encoder: a signed-in route logs the caller, a decorator replaces the caller, a rejected request logs no subject, and the response body never contains one;
 - review for everything else, because no linter can tell what the code knew when the error happened. A handler that returns an error without a subject, after loading the record that names the affected party, goes back.
 
 ---

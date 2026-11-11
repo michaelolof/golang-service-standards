@@ -35,6 +35,23 @@ These haven't been decided, and nothing enforces them yet.
 | Do implementation plans list their sub-tasks? | Yes. Every plan has a table in the task list's format, with temporary IDs that exist only in that plan (COL-17). |
 | Who deletes implementation plans? | Only the engineer, on an explicit instruction. A finished plan and its completion document stay in the folder (COL-18). |
 
+## Checks
+
+| Question | Decision |
+|---|---|
+| Who writes the checks lint's own linters can't express? | The standard. They're analyzers in `lint/analyzers`, compiled into the same golangci-lint, and `tools/archcheck` for what needs the whole module or files that aren't Go. A project keeps no `internal/architecture` and writes no checking code. Before this, the standard asked each project for its own copy: three codebases enforced one rule set three ways, or not at all, and the largest copy broke on every rename, guarded against reading nothing with counts, repeated checks lint already made, and kept its exceptions in maps (TEST-13). |
+| What may a check take from a project? | Nothing. The module comes from the package path, the layer from the folder under `internal/`, and each SDK's home from a table in the analyzer, built from ABS-7 and LAY-8. A rename in a project changes nothing in a check (TEST-13, LAY-7). |
+| Where does an exception go? | On the line, as `//nolint:<analyzer> // reason`, agreed with the engineer (COL-7). There are no lists of exceptions. archcheck takes none: each finding is fixed, and a wrong one is a bug fixed in the standard (TEST-13). |
+| How does a check prove it reads code? | Its fixtures: each analyzer has at least one case it reports and one it doesn't, and archcheck has a module where every check fires and one where none does. No check counts what it read (TEST-13). |
+| Do two checks ever cover the same thing? | No. Where depguard, forbidigo or revive checks part of a rule, the analyzer leaves that part alone, and the rule's table names both. |
+| Are the new checks warnings first? | No. Everything is on from the release. A project fixes each finding or records the exception at the site, and stays on the old version until its upgrade passes (ADO-6, ADO-7). |
+| Are test files checked? | Not while restructuring tests is paused. The lint config skips test files, so TEST-1, TEST-5, TEST-7 and TEST-10 are for review until TEST-14 ends (TEST-13). |
+| Who owns gofi's and enumx's conventions? | The libraries. `gofihandlers` checks gofi's GUIDELINES.md and `enums` follows enumx's declaration style; both live in `lint/analyzers` until the libraries publish their own (HTTP-1, DOM-6). |
+| Does archcheck report a variable `.env.example` lists that no tag reads? | No. The file also lists variables for docker compose, and for SDKs that read the environment themselves, and a line in it has nowhere to record why. archcheck checks the other direction, every tagged variable listed, and review checks this one (LAY-13). |
+| What does "project test" mean in an "Enforced by" column? | A test the project writes, of behaviour only a running test can show, such as the error body or two tenants. The rule says what it asserts. The column used to say "shared test" or "server test", which promised helpers the standard doesn't ship. Shared helpers for some are still to build (10-adoption). |
+| Is `deadcode` a check? | No, review. Some of what it lists is kept on purpose, such as a logger's `Debug` nothing calls yet, and a finding has no line to record why. 03's smells give the command. |
+| Is SEC-5's typed scope checked by a machine? | No. Which repositories hold tenant data, and which type is a scope, differ per project, so it's for review (SEC-5). |
+
 ## Layout
 
 | Question | Decision |
@@ -87,7 +104,7 @@ These haven't been decided, and nothing enforces them yet.
 | Where do error kinds live? | All in `foundation/errkinds`, with no per-package kinds and no `<pkg>_` prefix. A kind is added only when code branches on it. A handler that wants its own client message keeps the general kind and adds `.WithMsg(...)` after checking it (ERR-5, ERR-7). |
 | Does every error response include `retryable`? | Yes (ERR-7). |
 | Are the errors from gofi's `c.Next()` and `c.Send()` wrapped? | No. Their errors go back unchanged, and lint's ignore list grows by those two methods only (ERR-3). |
-| How are wrapcheck's gaps closed? | With the standard's own `wrapgaps` plugin, which reports direct returns in closures and generic calls, using wrapcheck's ignore lists. A check in the arch test wouldn't fail with the other lint, and wrapcheck skips closures on purpose (ERR-3). |
+| How are wrapcheck's gaps closed? | With the standard's own `wrapgaps` plugin, which reports direct returns in closures and generic calls, using wrapcheck's ignore lists. A plugin fails in the same lint run as wrapcheck, and wrapcheck skips closures on purpose (ERR-3). |
 | What code does an unknown error get? | `UNHANDLED_SERVER_ERROR`, including a recovered panic. `INTERNAL_SERVER_ERROR` is for a 500 someone chose (ERR-7, ERR-11). |
 | What does `httperr.Map` return? | `*httperr`, as `New` and `Wrap` do. There's no `HTTPError` interface (ERR-7). |
 | How is a `ValidateAndBind` error returned? | Through `httperr.Map`, which keeps gofi's status and leaves gofi's text out of the error, because it can quote the request body (HTTP-3, ERR-7). |
@@ -138,7 +155,7 @@ These haven't been decided, and nothing enforces them yet.
 | `require` or `assert`? | `require` only, for new projects. |
 | How do table tests name an error kind? | A separate table per kind, for new projects. |
 | How is test infrastructure started? | docker compose through `task test:up`, for new projects (TEST-3). |
-| Where do flow tests live? | `tests/flows` (TEST-1). |
+| Where do flow tests live? | `test/flows` (TEST-1). Every black-box suite is under `test/`, as LAY-1's tree shows, and the `layers` analyzer accepts no other folder. |
 | Where is miniredis allowed? | Anywhere. |
 
 ## Deliberately not in the standard

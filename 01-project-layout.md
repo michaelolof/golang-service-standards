@@ -6,19 +6,19 @@ How a service repository is laid out, how its packages are named and divided, ho
 
 | ID | Rule | Enforced by |
 |---|---|---|
-| LAY-1 | Application code lives in `cmd/` and `internal/`. `pkg/` holds only libraries being incubated for extraction, and they import nothing from `internal/`. | arch test, depguard |
-| LAY-2 | `main` only sets up signals, calls `run(ctx, …) error`, and exits. | gocritic `exitAfterDefer`, revive `deep-exit`, arch test |
-| LAY-3 | One `wire.go` per binary builds every dependency at startup and returns errors. Nothing looks dependencies up at request time. | arch test, review |
+| LAY-1 | Application code lives in `cmd/` and `internal/`. `pkg/` holds only libraries being incubated for extraction, and they import nothing from `internal/`. | `layers`, depguard |
+| LAY-2 | `main` only sets up signals, calls `run(ctx, …) error`, and exits. | gocritic `exitAfterDefer`, revive `deep-exit`, `cmdshape` |
+| LAY-3 | One `wire.go` per binary builds every dependency at startup and returns errors. Nothing looks dependencies up at request time. | `cmdshape`, `layers`, depguard, review |
 | LAY-4 | Long-running components expose `Run(ctx) error` and run under `supervise.Run` (CON-2). | review |
 | LAY-5 | Migrations run only from a command in `cmd/tools/`. Services check the schema version and fail closed. | review |
-| LAY-6 | `internal/` uses one taxonomy: foundation, config, domain, ports, core, repository, adapters, http, workers. | arch test |
-| LAY-7 | A package imports only the layers its LAY-6 row allows. Each SDK has one home. | arch test, depguard |
-| LAY-8 | The package name equals the directory name. Choose names so importers never need an alias. | staticcheck ST1003, arch test |
-| LAY-9 | Name packages for what they do: never `util`, `helpers`, `common`, `types` or `models`. Place a helper by who uses it. | revive, arch test |
-| LAY-10 | Name files after their type or use-case. Target ≤ 500 lines; hard limit 1,000. | revive `file-length-limit`, arch test |
-| LAY-11 | Every package has a doc comment. No `README.md` under `internal/` or `cmd/`. | staticcheck ST1000, arch test |
+| LAY-6 | `internal/` uses one taxonomy: foundation, config, domain, ports, core, repository, adapters, http, workers. | `layers` |
+| LAY-7 | A package imports only the layers its LAY-6 row allows. Each SDK has one home. | `layers`, depguard |
+| LAY-8 | The package name equals the directory name. Choose names so importers never need an alias. | revive `package-directory-mismatch`, staticcheck ST1003, review |
+| LAY-9 | Name packages for what they do: never `util`, `helpers`, `common`, `types` or `models`. Place a helper by who uses it. | revive, `names`, review |
+| LAY-10 | Name files after their type or use-case. Target ≤ 500 lines; hard limit 1,000. | revive `file-length-limit`, `names`, review |
+| LAY-11 | Every package has a doc comment. No `README.md` under `internal/` or `cmd/`. | staticcheck ST1000, `tools/archcheck` |
 | LAY-12 | Only `internal/config` reads the environment, through an injected lookup. | forbidigo, depguard |
-| LAY-13 | Config is typed section structs with `Validate()`. Each binary composes its own sections, and each component takes its own small `Config`. | review, config test |
+| LAY-13 | Config is typed section structs with `Validate()`. Each binary composes its own sections, and each component takes its own small `Config`. | `tools/archcheck`, review |
 | LAY-14 | Taskfile has the standard targets. `check` is read-only and is exactly what CI runs. | CI |
 
 ---
@@ -34,7 +34,7 @@ How a service repository is laid out, how its packages are named and divided, ho
   - may use stdlib errors (`fmt.Errorf`, sentinel errors) instead of errx, because its future users won't all be services that follow this standard (ERR-12);
   - has its own `doc.go` or `README.md` and its own tests. If it owns a schema, it also has its own migrations (`pkg/<name>/migrations`).
 - `pkg/` is not a place for shared application code. Anything that knows this service's domain belongs in `internal/`.
-- The only other Go outside `cmd/`, `internal/` and `pkg/` is the one-file `//go:embed` shim in `db/migrations/`.
+- The only other Go outside `cmd/`, `internal/` and `pkg/` is the one-file `//go:embed` shim in `db/migrations/`, and the black-box suites in `test/` (TEST-1).
 
 **Why.** A repo holds two kinds of code:
 
@@ -54,7 +54,7 @@ db/migrations/              migration files + embed.go (package migrations, expo
 docs/                       openapi/ (generated, committed), runbooks/, adr/
 deploy/                     platform entrypoints, compose overrides, release scripts
 scripts/                    shell helpers called only from the Taskfile
-test/{e2e,contract,perf}/   cross-binary black-box suites (build-tagged)
+test/<suite>/               black-box suites: flows, e2e, contract, perf (build-tagged, TEST-1)
 web/                        built dashboard assets (embedded by the admin API)
 go.mod  Taskfile.yml  .golangci.yml  Dockerfile
 docker-compose.{local,test}.yml  .env.example  README.md
@@ -72,7 +72,7 @@ for _, imp := range f.Imports {
 }
 ```
 
-The standard makes this check universal, as a depguard rule (`pkg/**` may not import `<module>/internal`) and an architecture-test row.
+The standard makes this check universal, as a depguard rule (`pkg/**` may not import `<module>/internal`). The `layers` analyzer reports Go anywhere else outside `cmd/`, `internal/` and `pkg/`, at the package clause, where a `//nolint:layers // reason` records an exception.
 
 **Do.** An embed shim with no logic:
 
@@ -126,9 +126,12 @@ package main
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
-	if err := run(ctx, env.ToMap(os.Environ())); err != nil {
+	err := run(ctx, env.ToMap(os.Environ()))
+
+	stop()
+
+	if err != nil {
 		logger.Error(1793433180003, ctx, "process.run.failed", "error", err)
 		os.Exit(1)
 	}
@@ -154,6 +157,8 @@ func run(ctx context.Context, environ map[string]string) error {
 	)
 }
 ```
+
+`main` has no `defer`, because `os.Exit` would skip it, and gocritic's `exitAfterDefer` reports one. It releases the signal context itself once `run` returns. Everything `run` opens is closed by `run`'s own defers before `main` sees the error.
 
 Every command starts with a `// Command <name> …` doc comment.
 
@@ -257,7 +262,12 @@ func wire(ctx context.Context, cfg apiConfig) (*app, func(), error) {
 }
 ```
 
-`wire.go` is the only file that names concrete adapters, repositories and services together. An arch test checks this: no package outside `cmd/**` imports both `internal/config` and `internal/adapters/**`.
+`wire.go` is the only file that names concrete adapters, repositories and services together. Lint keeps it that way:
+- depguard lets only `cmd/**` import `internal/config`;
+- the `layers` analyzer keeps adapters out of every layer the LAY-6 table doesn't give them to (LAY-7);
+- the `cmdshape` analyzer reports a service in `cmd/services/` with no `wire.go`, a `wire.go` holding any function other than `wire`, and a `wire` with another signature.
+
+Whether anything looks a dependency up at request time is for review.
 
 ---
 
@@ -318,7 +328,6 @@ Interfaces can also end up in three places: `internal/ports`, `domain/*_contract
 | `http/…` | Inbound HTTP: `server`, `routes`, `deps`, `middleware`, `httperr`, `schemas`, `<api>/<resource>` handlers | core, repository, domain, ports, foundation |
 | `workers/<name>` | Inbound async work: queue jobs, stream consumers, schedulers | core, repository, domain, ports, jobs, foundation |
 | `testutils/<name>` | Shared test infrastructure | anything; imported only from `_test.go` |
-| `architecture` | Tests that encode this table | none |
 | `cmd/**` | Composition root | anything |
 | `pkg/<name>` (outside `internal/`) | Libraries being incubated for extraction (LAY-1) | other `pkg/`; never `internal/` |
 
@@ -423,25 +432,29 @@ type Store interface {
 ```
 
 **Enforced by.**
-- **depguard** for SDK confinement ([lint config](lint/.golangci.yml)).
-- **One table-driven architecture test** over `go list -json ./...`, in `internal/architecture/boundaries_test.go` and copied into every project:
+- **depguard** keeps each SDK in `adapters/`, `repository/`, `cmd/` and `pkg/`, gofi in `http/`, and `internal/config` in `cmd/` ([lint config](lint/.golangci.yml)).
+- **The `layers` analyzer** ([lint/analyzers](lint/analyzers)) checks the rest. It reads the layer from the folder under `internal/` and the module from the package path, so a project configures nothing:
+  - every package under `internal/` sits in a layer of the LAY-6 table; `domain`, `ports` and `jobs` have no subpackages except their `<layer>test` helpers; and the root of `repository`, `adapters` and `workers`, which hold one package per thing, holds no code (LAY-6);
+  - every import from one layer to another is one the "May import" column allows. A layer that holds one package per thing doesn't import its siblings: a repository doesn't import another repository, an adapter another adapter, or a worker another worker. `foundation`, `core` and `http` are sets of packages that work together, so they may. A component's own subpackages, such as `adapters/kafka/codec`, are part of it;
+  - a repository imports one adapter, its database's store adapter, named `<name>store` (LAY-8);
+  - inside `adapters/` and `repository/`, each SDK is imported only in its own adapter, from the table below. A repository also imports its database driver.
+
+| SDK | Its one adapter |
+|---|---|
+| pgx | `adapters/crdbstore` or `adapters/pgstore` |
+| mongo-driver | `adapters/mongostore` |
+| gocql | `adapters/scyllastore` or `adapters/cassandrastore` |
+| go-redis, asynq | `adapters/redis` |
+| franz-go | `adapters/kafka` |
+| minio, and the AWS SDK's S3 packages | `adapters/s3store` |
+| the AWS SDK's KMS package | `adapters/awskms` |
+
+The table comes from ABS-7, which names an adapter for its system, and LAY-8, which adds `store` to a database or object store that holds the service's data. The AWS SDK's shared packages, such as `aws` and `config`, serve every AWS adapter, so depguard alone keeps them in adapters.
+
+**Exceptions.** A justified exception is a `//nolint:layers // reason` on the import, agreed with the engineer (COL-7). For example, while a project keeps its database adapter's old name:
 
 ```go
-var layers = []struct {
-	pkg       string   // package prefix under the module
-	mayImport []string // allowed internal prefixes (stdlib and third party are checked by depguard)
-}{
-	{"internal/foundation", []string{"internal/foundation"}},
-	{"internal/domain", []string{"internal/foundation"}},
-	{"internal/ports", []string{"internal/domain", "internal/foundation"}},
-	{"internal/jobs", []string{"internal/domain", "internal/foundation"}},
-	{"internal/core", []string{"internal/core", "internal/ports", "internal/jobs", "internal/domain", "internal/foundation"}},
-	{"internal/repository", []string{"internal/core", "internal/ports", "internal/jobs", "internal/domain", "internal/foundation", "internal/adapters"}},
-	{"internal/adapters", []string{"internal/core", "internal/ports", "internal/jobs", "internal/domain", "internal/foundation"}},
-	{"internal/http", []string{"internal/core", "internal/repository", "internal/ports", "internal/domain", "internal/foundation", "internal/http"}},
-	{"internal/workers", []string{"internal/core", "internal/repository", "internal/ports", "internal/jobs", "internal/domain", "internal/foundation"}},
-	{"pkg", []string{"pkg"}},
-}
+import "example.com/myservice/internal/adapters/scylla" //nolint:layers // keeps its name until the rename to scyllastore
 ```
 
 ---
@@ -527,7 +540,7 @@ func Oneof[T ~string](values iter.Seq[T]) string {
 
 - Name a file after its main type or use-case (`create.go`, `wallet.go`, `transfer_transitions.go`).
 - `<pkg>.go` holds the package's main type and its constructor.
-- Split files by use-case, not by kind. `helpers.go`, `utils.go`, `common.go` and `types.go` are banned.
+- Split files by use-case, not by kind. `helper(s).go`, `util(s).go`, `common.go` and `types.go` are banned, and the `names` analyzer reports them. Whether a name says what the file holds is for review.
 - Target 500 lines or fewer. The hard limit is 1,000 non-blank, non-comment lines.
 - Test files mirror their source: `create.go` pairs with `create_test.go`.
 
@@ -536,7 +549,7 @@ func Oneof[T ~string](values iter.Seq[T]) string {
 **Do.**
 
 - `core/wallet/{create,lifecycle,balance,routing}.go`.
-- `http/admin/apikeys/{create,list,revoke,rotate}.go`. An architecture test can also check "one handler per file".
+- `http/admin/apikeys/{create,list,revoke,rotate}.go`. The `gofihandlers` analyzer checks one handler per file (HTTP-2).
 
 ---
 
@@ -665,7 +678,8 @@ store, err := s3store.New(ctx, s3store.Config{Endpoint: cfg.S3.Endpoint, Region:
 
 - forbidigo `^os\.(Getenv|LookupEnv|Environ|Setenv)$` outside `internal/config/` and `cmd/`.
 - depguard on `internal/config` and `godotenv`.
-- A config test asserting that every `env:"…"` tag appears in `.env.example`, and vice versa.
+- `tools/archcheck`: every variable an `env:"…"` tag in `internal/config` or `cmd/` reads is listed in `.env.example`, set or commented out. A project writes no test for this.
+- review, for variables `.env.example` lists that nothing reads any more. The file also lists variables for docker compose, and for SDKs that read the environment themselves, which no tag reads.
 
 ---
 
@@ -699,7 +713,6 @@ includes:
     flatten: true
 
 tasks:
-  arch:             {desc: Architecture rules,                      cmds: [go test ./internal/architecture/...]}
   test:             {desc: Unit tests, no infra,                    cmds: [go test -race ./...]}
   test:integration: {desc: Integration tests against infra,         cmds: [go test -race -tags integration ./...]}
   test:e2e:         {desc: Black-box suites in ./test,              cmds: [go test -tags e2e ./test/...]}
@@ -708,7 +721,7 @@ tasks:
   generate:check:   {desc: Fail if generated files are stale,       cmds: [go run ./cmd/tools/openapi -check -out docs/openapi]}
   vuln:             {desc: govulncheck,                             cmds: [go tool govulncheck ./cmd/...]}
   check:fast:       {desc: What the hooks run (the standard's local checks and unit tests), deps: [standards:check:fast, test]}
-  check:            {desc: CI gate (read-only), deps: [standards:check, arch, test, build, generate:check, vuln]}
+  check:            {desc: CI gate (read-only), deps: [standards:check, test, build, generate:check, vuln]}
   infra:up:         {desc: Start local deps,   dotenv: [.env.local], cmds: [docker compose -f docker-compose.local.yml up -d --wait]}
   infra:down:       {desc: Stop local deps,    cmds: [docker compose -f docker-compose.local.yml down]}
   migrate:up:       {desc: Apply migrations,   dotenv: [.env.local], cmds: [go run ./cmd/tools/migrate up]}

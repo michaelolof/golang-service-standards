@@ -8,3 +8,5 @@ plugins:
     path: ./requiredtag
   - module: github.com/michaelolof/wrapgaps
     path: ./wrapgaps
+  - module: github.com/michaelolof/golang-service-standards/lint/analyzers
+    path: ./analyzers

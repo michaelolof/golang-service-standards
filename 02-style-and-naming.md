@@ -16,10 +16,10 @@ Comment *why*, never *what*.
 | ID | Rule | Enforced by |
 |---|---|---|
 | STY-1 | Format with gofumpt and order imports with gci in three groups. Every project uses one shared lint config. | formatters, CI |
-| STY-2 | Names follow the [naming table](#sty-2--naming). | revive, staticcheck, arch test |
+| STY-2 | Names follow the [naming table](#sty-2--naming). | revive, staticcheck, `names`, review |
 | STY-3 | Guard clauses first. Split a function only where a part is its own idea. No length limit; complexity 20, nesting 4, 6 parameters, 3 results. A field tagged `lint:"required"` or `validate:"required"` must be set in every literal. | gocognit, revive, `requiredtag` |
 | STY-4 | Structs: identity, then data, then timestamps. A named `mu` sits above the fields it guards. Tags in a fixed order, snake_case JSON, and lowercase kebab-case header names. | embeddedstructfieldcheck, tagliatelle |
-| STY-5 | Doc-comment every exported identifier. Explain *why*. No step narration, plan references or bare TODOs. | revive, gocritic, CI grep |
+| STY-5 | Doc-comment every exported identifier. Explain *why*. No step narration, plan references or bare TODOs. | revive, gocritic, `comments` |
 | STY-6 | Declaration order in a file: consts, vars, type, `New`, exported methods, unexported methods, helpers. | funcorder |
 | STY-7 | Use modern Go: `any`, `range n`, `new(v)`, `slices`/`maps`, `min`/`max`, `wg.Go`. | modernize, intrange |
 | STY-8 | Name policy values and repeated literals. Use stdlib constants for HTTP methods and statuses, except the status in gofi's `c.Send`. | usestdlibvars, review |
@@ -391,8 +391,8 @@ func (s *Service) Park(ctx context.Context, args ParkArgs) (ParkResult, error) {
 
 **Enforced by:**
 - revive `exported` and `package-comments`;
-- gocritic `commentedOutCode`, `todoCommentWithoutDetail` and `docStub`;
-- a CI grep for the patterns golangci-lint can't express: `//.*(§|Phase [0-9]|Task [0-9]+|\.md\b)`, `// Step [0-9]+:`, and a `TODO` not followed by `([A-Z]+-[0-9]+):`.
+- gocritic `commentedOutCode` and `docStub`;
+- the `comments` analyzer, for what those can't express. In code that isn't a test, it reports punctuation beyond ASCII (a letter such as the é in a name is fine), a reference to a plan (`§`, `Phase 3`, `Task 12`, `improvements.md`), `Step N:` narration, and a `TODO` without `(TICKET-123):`.
 
 ## STY-6 · Declaration order in a file
 
@@ -902,30 +902,46 @@ Between 36% and 57% of these were in test files, mostly `paralleltest`, which ha
 - Run `task fmt` once. gci can crash on a file that was never formatted.
 - Fix any `integration`-tagged test that no longer compiles. When no task builds tagged tests, a changed signature can break one with nobody noticing. The config's `build-tags: [integration]` will fail type-checking until it is fixed.
 
-**Checks golangci-lint can't express** go into the shared `internal/architecture` test (TEST-13) or a small custom analyzer:
+**Checks golangci-lint's own linters can't express** are the standard's analyzers, compiled into the same golangci-lint ([lint/analyzers](lint/analyzers)), or `tools/archcheck`, which `task standards:check` runs for what needs the whole module or files that aren't Go (TEST-13). A project writes no checking code of its own.
 
 | Check | Rule | Where |
 |---|---|---|
-| Layer import table | LAY-6, LAY-7 | arch test |
-| Root allowlist; no Go outside `cmd`/`internal`/`pkg`/`db/migrations`/`test`; `pkg/` imports no `internal/` | LAY-1 | arch test, depguard |
-| `main.go` declares only `main` and `run`; wiring in `wire.go` | LAY-2, LAY-3 | arch test |
-| Banned package suffixes (`*utils`) and banned file names | LAY-9, LAY-10 | arch test |
-| No `README.md` under `internal/` or `cmd/` | LAY-11 | arch test |
+| Go only in `cmd/`, `internal/`, `pkg/`, `db/migrations` and `test/`; `pkg/` imports no `internal/` | LAY-1 | `layers`, depguard |
+| `main.go` declares only `main` and `run`; each service has one `wire` function in `wire.go` | LAY-2, LAY-3 | `cmdshape` |
+| Every package is in a LAY-6 layer; flat layers stay flat; `ports` has no constructors | LAY-6 | `layers` |
+| Layer import table; each SDK in its own adapter | LAY-7 | `layers` (SDKs outside adapters: depguard) |
+| Package names ending in `util(s)` or `helper(s)`; banned file names | LAY-9, LAY-10 | `names` (exact names: revive) |
+| No `README.md` beside Go code under `internal/` or `cmd/` | LAY-11 | `tools/archcheck` |
+| `.env.example` lists every variable the config's `env` tags read | LAY-13 | `tools/archcheck` |
 | No database or cache driver imported by `domain` | DOM-4 | depguard |
+| New IDs only from the injected generator | DOM-1 | forbidigo `[ids]` |
+| enumx enums: nil fallback, `Parse`, `Validate`, `Oneof`, `<Type><Variant>` names, UPPER_SNAKE values | DOM-6 | `enums` |
 | Every literal sets the fields tagged required | STY-3 | `requiredtag` (the standard's own plugin) |
-| Interface assertion present on adapters and repositories; banned type-name suffixes; no stranded or duplicate interfaces | ABS-1, ABS-2, ABS-3 | arch test |
-| No `With*` mutators or exported fields on services; `New` returns an error | ABS-5 | arch test |
+| Interfaces with no implementation, ports with no consumer, duplicate interfaces | ABS-1 | `tools/archcheck` |
+| An assertion on each repository or adapter type the module uses as an interface | ABS-2 | `tools/archcheck` |
+| Banned type-name prefixes and suffixes | ABS-3 | `names` |
+| `New(Deps) (*Service, error)`; no `With*` mutators or exported fields on services | ABS-5 | `services` |
+| `<Op>Args`, not `Params` or `Arg`, on a service method | ABS-6 | `names` |
+| Adapter constructors; no SDK type in an adapter's exported API | ABS-7 | `adapters` |
+| No type switch on a type parameter | ABS-8 | `generics` |
 | A stamp literal as the first argument of every `errx`, `httperr` and `logger` call | ERR-1, LOG-1 | the compiler (unexported `stamp` type) |
 | A constant event name in every log call | LOG-3 | the compiler (unexported `eventName` type) |
 | Log key names, and the format of event names | LOG-2, LOG-3 | review |
-| Kind declarations: naming, uniqueness, used | ERR-5 | arch test |
-| `go` statements only in `foundation/supervise` | CON-1 | arch test |
-| `context.WithValue` only in `context.go` | CTX-2 | arch test |
-| Repositories export only `Repo`; `repo.go` and `row.go` present | DATA-1, DATA-2 | arch test |
-| Repository verb allow/deny list | DATA-3 | `repoverbs` analyzer |
-| Queries are constant expressions | DATA-5 | `constquery` analyzer |
-| Migration file names | DATA-11 | arch test |
-| Tag honesty; fake hygiene; table and name rules; `time.Sleep` only in `synctest` | TEST-1, TEST-5, TEST-7, TEST-12 | arch test |
-| Comment hygiene greps; no SQL `now()`; named `ON CONFLICT` targets | STY-5, DATA-6, DATA-8 | CI grep |
-| One gofi handler per file, declared before its schema | HTTP-2 | arch test |
+| Kind declarations: one list, naming, unique strings | ERR-5 | `errkinds` |
+| Every kind created somewhere and checked somewhere | ERR-5 | `tools/archcheck` |
+| A handler returns its errors through `httperr` | ERR-7 | `errmap` |
+| `recover` only at a root | ERR-11 | forbidigo `[recover]` |
+| One gofi handler per file, named `<Operation>Handler`, its schema directly below; route info | HTTP-1, HTTP-2, HTTP-5 | `gofihandlers` (gofi's guidelines) |
+| Every field and parameter documented in the committed OpenAPI document | HTTP-4 | `tools/archcheck` |
+| Job handlers named for their action, never inspecting an error; job kinds `<capability>.<action>` | JOB-1, ERR-8 | `jobs` |
+| `context.WithValue` only in `context.go`, with unexported `struct{}` keys | CTX-2 | `ctxkeys` |
+| `go` statements only in `foundation/supervise` | CON-1, CON-2 | `goroutines` |
+| Repositories: one package per aggregate, `repo.go` and `row.go`, only `Repo` exported, no SDK types in its methods | DATA-1, DATA-2 | `repos` |
+| Repository verb allow/deny list | DATA-3 | `repoverbs` |
+| Queries are constant expressions; no SQL `now()`; named `ON CONFLICT` targets | DATA-5, DATA-6, DATA-8 | `constquery` |
+| Migration file names | DATA-11 | `tools/archcheck` |
+| Comment hygiene: ASCII punctuation, no plan references or step narration, ticketed TODOs | STY-5 | `comments` |
+| Metric instrument names and units | OBS-2 | `metricnames` |
+| Test code only in tests, and in no binary | TEST-13 | `layers`, `tools/archcheck` |
+| Test-file rules: tag honesty, fake hygiene, table shape | TEST-1, TEST-5, TEST-7 | review, while restructuring tests is paused (TEST-14) |
 | A function reads as a story: title, guards, one level of detail, names | STY-9 | review (the paragraphs are `wsl_v5`) |

@@ -266,7 +266,7 @@ git add -A && git commit -m "Upgrade standards to v0.2.0"
 The rules follow from ten principles. When no rule covers a situation, apply these.
 
 1. **One answer per question.** Where Go allows several reasonable choices, the standard picks one. Being consistent across repos is worth more than being slightly better locally, for people and for agents.
-2. **Machines enforce, people judge.** Every rule says how it is checked: formatter, linter, architecture test, analyzer, or review. Review time is spent on design, not on style.
+2. **Machines enforce, people judge.** Every rule says how it is checked: formatter, linter, the standard's own analyzers and `tools/archcheck`, or review. The standard ships every check, so a project writes none. Review time is spent on design, not on style.
 3. **Dependencies point inward, and boundaries translate.** SDK types, driver errors and wire formats stop at adapters, repositories and transports. `domain` and `core` speak only in domain types and errx kinds.
 4. **An abstraction must earn its place.** It hides a dependency, enforces an invariant, or has at least two real implementations or consumers today. Otherwise, inline it.
 5. **Explicit, not ambient.**
@@ -334,11 +334,12 @@ Following one cancel request through those files:
 | [security-audit.md](security-audit.md) | The prompt for running a multi-tenant security audit, and the checklist for writing secure code | SEC-26 |
 | [10 · Adoption](10-adoption.md) | How a project consumes the standard, and what makes it mandatory for agents and people | ADO-* |
 | [09 · Collaboration](09-collaboration.md) | How an engineer and an agent take a task from brief to `done`: brief, questions, tests first, plan, `completed` and `done`, completion document, review, stop rules, autonomy, clear language, task lists, implementation plans, workstreams | COL-1…20 |
-| [lint/.golangci.yml](lint/.golangci.yml) | The shared golangci-lint v2 config, and the standard's own [`requiredtag`](lint/requiredtag) and [`wrapgaps`](lint/wrapgaps) plugins | |
+| [lint/.golangci.yml](lint/.golangci.yml) | The shared golangci-lint v2 config, the standard's own [`requiredtag`](lint/requiredtag) and [`wrapgaps`](lint/wrapgaps) plugins, and its structural [analyzers](lint/analyzers) | |
 | [decisions.md](decisions.md) | What was decided, and the few things still parked | |
 | [RULES.md](RULES.md) | Every rule on one page, generated from the tables in each document. It's what an agent loads first. | |
 | [templates/](templates), [hooks/](hooks), [Taskfile.standards.yml](Taskfile.standards.yml) | What a project takes from here to make the rules mandatory ([Install](#install)) | |
 | [tools/stamps](tools/stamps) | The tool behind `task stamps` and `task stamps:check` (ERR-1) | |
+| [tools/archcheck](tools/archcheck) | The checks that need the whole module or files that aren't Go, run by `task standards:check` (TEST-13) | |
 
 There are 157 rules. Each has an ID, so a review comment or an agent can cite one: "violates ERR-3".
 
@@ -356,14 +357,13 @@ From cheapest to most expensive:
 | Layer | What | Status |
 |---|---|---|
 | Formatter | gofumpt and gci, through `task fmt` | Ready ([config](lint/.golangci.yml)) |
-| Linter | golangci-lint v2 with 41 linters and 2 formatters, including depguard, forbidigo, wsl and the standard's own `requiredtag` and `wrapgaps` plugins. `task lint` builds it | Ready ([config](lint/.golangci.yml), plugins: [requiredtag](lint/requiredtag), [wrapgaps](lint/wrapgaps)) |
-| Architecture test | A shared, table-driven `internal/architecture` test that encodes the layer table, naming bans and test hygiene. [LAY-7](01-project-layout.md) has its table. | To build |
+| Linter | golangci-lint v2 with 41 linters and 2 formatters, including depguard, forbidigo and wsl, plus the standard's own: the `requiredtag` and `wrapgaps` plugins and 18 structural analyzers. `task lint` builds it | Ready ([config](lint/.golangci.yml), plugins: [requiredtag](lint/requiredtag), [wrapgaps](lint/wrapgaps), [analyzers](lint/analyzers)) |
+| Structural checks | The checks golangci-lint's own linters can't express: the layer table, SDK homes, naming bans, the shapes of `main`, services, adapters, repositories, handlers and jobs, kinds, context keys, goroutines, queries, comments and metric names. Analyzers in golangci-lint check one package at a time; `tools/archcheck` checks interfaces, assertions, kinds, binaries, `.env.example`, migrations and the OpenAPI document across the module. Projects keep no `internal/architecture` (TEST-13) | Ready ([analyzers](lint/analyzers), [archcheck](tools/archcheck)) |
 | Compiler | Unexported `stamp` and `eventName` types: only a literal stamp and a constant event name compile | errx does this. A project's `httperr` and `logger` packages do it by following ERR-1 and LOG-1 |
 | Stamp tool | `task stamps` hands out stamps from the clock, and `task stamps:check` fails on a new stamp it didn't hand out, a new repeat, a stamp from the future or a `__STAMP__` left in the code | Ready ([tools/stamps](tools/stamps)) |
-| Custom analyzers | `constquery` (constant queries), `repoverbs` (repository verbs) | To build |
-| Shared test helpers | `pagination.AssertStablePaging`, `AssertConcurrentUpdateConflicts`, the migrate-twice test, conformance suites | To build |
+| Project tests | Behaviour that only a running test can show, such as the error body, each route's permission, two tenants, concurrent updates, stable paging and migrating twice. Where a rule's "Enforced by" says "project test", the rule says what the test asserts, and the project writes it. The standard doesn't ship them, because they run against each project's own code and infrastructure | Each project writes them. Shared helpers for some (`pagination.AssertStablePaging`, `AssertConcurrentUpdateConflicts`, the migrate-twice test, conformance suites) are to build |
 | Standard's own checks | `AGENTS.md`, `.golangci.yml`, `.standards/` and new stamps, through `standards:check` | Ready ([Taskfile](Taskfile.standards.yml)) |
-| CI | `task check`: the standard's own checks, test, build and vuln, plus arch and `generate:check` as a project has them, in any CI that can run a command | Each project sets it up (ADO-5) |
+| CI | `task check`: the standard's own checks, test, build and vuln, plus `generate:check` as a project has it, in any CI that can run a command | Each project sets it up (ADO-5) |
 | Review | What tools can't decide: abstraction fit, naming quality, comment quality | Ongoing |
 
 [02 · Style and naming](02-style-and-naming.md#what-the-lint-config-covers-and-what-it-cant) maps each rule that lint can't express to the check that covers it.

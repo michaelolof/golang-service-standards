@@ -18,19 +18,19 @@ Without these rules, tests drift. Across three codebases with no test linter ena
 
 | ID | Rule | Enforced by |
 |---|---|---|
-| TEST-1 | Each kind of test has one home and one build tag. A test with no tag uses no infrastructure. Each behaviour is tested once, at the lowest layer where it is real. | arch test, review |
-| TEST-2 | Under its tag, missing infrastructure fails the test; it never skips. Nothing is gated by `testing.Short()` or environment variables. | forbidigo, arch test |
-| TEST-3 | Run one docker-compose stack through Task, and isolate tests by namespace. Never reset or flush global state. | depguard, arch test |
-| TEST-4 | Use testify `require` only, and compare whole values. | testifylint, arch test |
-| TEST-5 | Test doubles are hand-written fakes named `fake…`. They are small working implementations that never embed the interface. | arch test |
+| TEST-1 | Each kind of test has one home and one build tag. A test with no tag uses no infrastructure. Each behaviour is tested once, at the lowest layer where it is real. | review |
+| TEST-2 | Under its tag, missing infrastructure fails the test; it never skips. Nothing is gated by `testing.Short()` or environment variables. | forbidigo, review |
+| TEST-3 | Run one docker-compose stack through Task, and isolate tests by namespace. Never reset or flush global state. | depguard, review |
+| TEST-4 | Use testify `require` only, and compare whole values. | testifylint, depguard |
+| TEST-5 | Test doubles are hand-written fakes named `fake…`. They are small working implementations that never embed the interface. | review |
 | TEST-6 | A shared fake lives in `xtest` and passes the same conformance suite as the real adapter. | review |
-| TEST-7 | Tables are for three or more data-only cases. Rows hold no functions and the loop body has no branches. Names follow fixed patterns. | arch test |
+| TEST-7 | Tables are for three or more data-only cases. Rows hold no functions and the loop body has no branches. Names follow fixed patterns. | review |
 | TEST-8 | `t.Parallel()` is optional. Use it where a test shares nothing. | review |
 | TEST-9 | Helpers take `t testing.TB`, call `t.Helper()`, fail with `require`, use `t.Context()` and register `t.Cleanup`. | thelper, usetesting |
-| TEST-10 | Builders return valid values with fixed IDs and times. `testdata/` holds no Go code. | arch test |
-| TEST-11 | Each layer has one testing recipe. | arch test, review |
+| TEST-10 | Builders return valid values with fixed IDs and times. `testdata/` holds no Go code. | review |
+| TEST-11 | Each layer has one testing recipe. | review |
 | TEST-12 | Time, IDs and randomness are injected. Use `synctest` inside a process. Polling across processes must fail on timeout. | forbidigo, testifylint |
-| TEST-13 | Architecture tests are table-driven, typed, and check that they inspected something. | review |
+| TEST-13 | Projects keep no `internal/architecture`. The standard's analyzers and `tools/archcheck` hold the structural checks, and each proves with fixtures that it reads code. Test code stays in tests. | `layers`, `tools/archcheck`, review |
 | TEST-14 | Restructuring tests is paused. Existing tests stay as they are during refactors, as the guardrails. | review |
 
 ---
@@ -43,12 +43,12 @@ Without these rules, tests drift. Across three codebases with no test linter ena
 |---|---|---|---|
 | unit | beside the code | none | nothing: fakes and `httptest.Server` only |
 | integration (repositories, adapters, migrations) | beside the code, in `*_integration_test.go` | `integration` | the compose stack |
-| flow (the composed app: several components through their real wiring) | `tests/flows` | `integration` | the compose stack |
-| e2e | `tests/e2e`, which is its own Go module | `e2e` | a running deployment |
-| third-party sandbox | `tests/contract` | `contract` | a vendor sandbox, never default CI |
-| load | `tests/perf` | `perf` | the compose stack |
+| flow (the composed app: several components through their real wiring) | `test/flows` | `integration` | the compose stack |
+| e2e | `test/e2e`, which is its own Go module | `e2e` | a running deployment |
+| third-party sandbox | `test/contract` | `contract` | a vendor sandbox, never default CI |
+| load | `test/perf` | `perf` | the compose stack |
 
-- A file carries `//go:build integration` **if and only if** its name ends in `_integration_test.go`, or it lives under `tests/flows`.
+- A file carries `//go:build integration` **if and only if** its name ends in `_integration_test.go`, or it lives under `test/flows`.
 - The integration `TestMain` lives in `main_integration_test.go`.
 
 **What to test where.** Not every function needs its own test, but every behaviour needs one, at the lowest layer where that behaviour is real:
@@ -57,7 +57,7 @@ Without these rules, tests drift. Across three codebases with no test linter ena
 |---|---|---|
 | SQL, CQL or Mongo queries; constraints, guards in `WHERE`, CTEs, indexes, migrations | an integration test beside the repository | a unit test with a mocked driver or fake SQL |
 | Business rules, branches and error kinds in `domain` and core | unit tests with fakes | a flow test that goes through the database for each branch |
-| Wiring, middleware order, auth, and the HTTP contract across components | flow tests in `tests/flows` | a handler unit test per route |
+| Wiring, middleware order, auth, and the HTTP contract across components | flow tests in `test/flows` | a handler unit test per route |
 
 - Don't assert the same behaviour at two layers. A repository method whose only logic is its query has an integration test and no unit test.
 - A unit test isn't redundant with an integration test when it covers branches that are expensive to reach through the database: each error kind, each guard, each edge case. It runs in milliseconds and points straight at the failing rule.
@@ -399,7 +399,7 @@ func Transfer(t testing.TB) domain.Transfer {
 |---|---|
 | `domain` | <ul><li>Pure tests, no fakes.</li><li>A valid table and an invalid table for each constructor and `Validate()`.</li><li>The transition-table test ranges over enumx `Values()` (DOM-7).</li><li>Fuzz parsers of untrusted input and assert a *property*, such as round-trip or idempotence. "Doesn't panic" is not enough.</li></ul> |
 | `core` | <ul><li>Build the real `Service` with `New(Deps{…})`, with **every** dependency set:<ul><li>fakes;</li><li>`clocktest`;</li><li>`idstest`;</li><li>a noop meter, if the capability has metrics.</li></ul></li><li>Never pass `nil` with a "not reached" comment.</li><li>`cancel.go` is tested in `cancel_test.go`.</li><li>Assert on the result and on the fake's state.</li></ul> |
-| `http` | <ul><li>Mount the handler variable on `apitest.NewRouter(t, d)`, which registers `d` as the router's `Deps` and uses the production body parser, error encoder and middleware.</li><li>Build `d` with `deps.New` from a real `Service` over fakes, or from fake repositories when the capability has no service.</li><li>Call `r.Test(...)` and decode the body.</li><li>Full route table plus database is tested once, in `tests/flows`. (parked: see [decisions.md](decisions.md))</li></ul> |
+| `http` | <ul><li>Mount the handler variable on `apitest.NewRouter(t, d)`, which registers `d` as the router's `Deps` and uses the production body parser, error encoder and middleware.</li><li>Build `d` with `deps.New` from a real `Service` over fakes, or from fake repositories when the capability has no service.</li><li>Call `r.Test(...)` and decode the body.</li><li>Full route table plus database is tested once, in `test/flows`. (parked: see [decisions.md](decisions.md))</li></ul> |
 | `workers` | <ul><li>Call `Handle(t.Context(), job)` directly, with fakes.</li><li>Assert the resulting state and the returned error kind. Test the runtime's outcome mapping once, in its adapter.</li><li>Never start the queue runtime in a unit test. Integration tests drive `RunOnce`.</li></ul> |
 | `repository` | <ul><li>Tagged `integration`, beside the repo, in an isolated namespace, migrated with the production runner.</li><li>Required: `AssertStablePaging`, `AssertConcurrentUpdateConflicts`, and the migrate-twice test.</li></ul> |
 | redis | <ul><li>`miniredis`, a real Redis server that runs inside the test process, can be used in any test.</li></ul> |
@@ -509,28 +509,33 @@ require.EventuallyWithT(t, func(c *assert.CollectT) {
 }, 10*time.Second, 50*time.Millisecond)
 ```
 
-## TEST-13 · Architecture and meta tests
+## TEST-13 · The standard ships the structural checks
 
-**Rule.** `internal/architecture` is table-driven and built on `golang.org/x/tools/go/packages` and `go/types`, not on string matching. It holds the arch-test rules from every area. For testing specifically, it checks:
+**Rule.**
+- A project keeps no `internal/architecture`, and writes no checking code of its own. The structural checks, the ones golangci-lint's own linters can't express, ship with the standard:
+  - the analyzers in [lint/analyzers](lint/analyzers), which `task lint` runs inside golangci-lint, one package at a time;
+  - [tools/archcheck](tools/archcheck), which `task standards:check` runs, for what needs the whole module or files that aren't Go.
 
-1. **Test-code isolation.** The dependencies of `./cmd/...` include no `testutils`, `*test` or mock packages. `*test` packages are imported only from `_test.go` files.
-2. **Tag honesty** (TEST-1). The `integration` tag appears on `_integration_test.go` files and the flow tests in `tests/flows`, and nowhere else, and untagged tests import no infrastructure drivers.
-3. **No Go packages under `testdata/`.**
-4. **Fake hygiene** (TEST-5): an assertion is present, no interface is embedded, and no banned names are used.
-5. **Table and name rules** (TEST-7).
-6. **`time.Sleep` only inside `synctest`** (TEST-12).
-7. **Every meta test checks that it inspected at least one target,** so a broken package walk fails instead of passing vacuously.
+  [02](02-style-and-naming.md#what-the-lint-config-covers-and-what-it-cant) maps each check to its rule.
+- They take nothing from the project. The module comes from the package path, the layer from the folder under `internal/`, and each SDK's home from the system it belongs to (LAY-7). So a rename in a project changes nothing in a check.
+- A justified exception is a `//nolint:<analyzer> // reason` on the line it's about, agreed with the engineer (COL-7). Nothing keeps a list of exceptions. archcheck takes no exceptions: each of its findings is fixed, and one that's wrong is a bug in archcheck, fixed in the standard.
+- **A check that reads nothing must fail.** Each analyzer has fixtures with at least one case it reports and one it doesn't, and archcheck has a fixture module where every check fires and one where none does. A check that stopped reading code fails the standard's own tests, instead of passing quietly in every project.
+- **Test code stays in tests.** A `<pkg>test` package, anything under `internal/testutils`, the `testing` package and testify are imported only by `_test.go` files and other test packages (the `layers` analyzer). No binary in `cmd/` carries test code that a library brings in (`tools/archcheck`).
+- Tag honesty (TEST-1), fake hygiene (TEST-5), tables and names (TEST-7), and Go under `testdata/` (TEST-10) are for review while restructuring tests is paused (TEST-14). The lint config doesn't read test files, and a check on them would make existing tests change.
 
-**Do.** A self-guarding meta test:
+**Why.** The standard used to ask each project for "one table-driven architecture test", copied into every project, and promised a shared one it never built. Across three codebases, one wrote 20 files and 3,931 lines of it, one wrote 1 file and 506 lines, and one wrote none. One rule set was enforced three ways, or not at all. The largest copy:
+- broke on renames. It hard-coded package paths and exception maps, so renaming four adapter packages meant editing four test files, and none of those edits found a problem;
+- guarded against reading nothing with counts such as "fewer than 1,000 stamps", which fail on a small project and needed a test of their own;
+- repeated checks lint and `task stamps:check` already made;
+- enforced libraries' own conventions, and one project's history, such as "the removed worker family doesn't come back";
+- kept its exceptions in maps inside the tests, where nobody reading the code could see that a file was exempt, or why.
+
+A project can't fix that alone, because the checks are only worth having if every project runs the same ones.
+
+**Do.** An exception, where it applies:
 
 ```go
-for _, binary := range []string{"api", "provider-webhook", "worker", "admin-api"} {
-	// ...
-	require.NotContains(t, deps, mockPkg, "%s must not import the provider mock, directly or indirectly", binary)
-}
-// Guard the check itself: the provider-mock binary does import the mock, so
-// a broken walk that finds nothing would fail here instead of passing above.
-require.Contains(t, moduleDeps(t, root, modulePath+"/cmd/tools/provider-mock"), mockPkg)
+import "example.com/myservice/internal/adapters/scylla" //nolint:layers // keeps its name until the rename to scyllastore (LAY-8)
 ```
 
 **Linters** (not applied while restructuring is paused, because the lint config skips test code):

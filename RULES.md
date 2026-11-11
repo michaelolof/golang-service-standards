@@ -138,7 +138,7 @@ Generated from the "Rules at a glance" tables. Don't edit it by hand. Each docum
 | TEST-10 | Builders return valid values with fixed IDs and times. `testdata/` holds no Go code. |
 | TEST-11 | Each layer has one testing recipe. |
 | TEST-12 | Time, IDs and randomness are injected. Use `synctest` inside a process. Polling across processes must fail on timeout. |
-| TEST-13 | Architecture tests are table-driven, typed, and check that they inspected something. |
+| TEST-13 | Projects keep no `internal/architecture`. The standard's analyzers and `tools/archcheck` hold the structural checks, and each proves with fixtures that it reads code. Test code stays in tests. |
 | TEST-14 | Restructuring tests is paused. Existing tests stay as they are during refactors, as the guardrails. |
 
 ## [08 · Security](08-security.md)

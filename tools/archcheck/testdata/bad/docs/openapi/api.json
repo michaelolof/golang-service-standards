@@ -1,0 +1,44 @@
+{
+  "openapi": "3.0.3",
+  "paths": {
+    "/v1/transfers": {
+      "get": {
+        "parameters": [
+          {"in": "query", "name": "limit", "schema": {"type": "integer", "description": "Page size.", "example": 50}},
+          {"in": "query", "name": "cursor", "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "description": "The transfers.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {"type": "string", "description": "The transfer's ID.", "example": "01JBX9K3Z8T6V2M4N7P5Q1R0S9"},
+                          "status": {"type": "string"}
+                        }
+                      }
+                    },
+                    "next_cursor": {"type": "string", "description": "The next page.", "example": "abc"}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/transfers/{id}": {
+      "get": {
+        "parameters": [{"in": "path", "name": "id", "description": "The transfer's ID.", "schema": {"type": "string", "example": "01JBX9K3Z8T6V2M4N7P5Q1R0S9"}}],
+        "responses": {"200": {"content": {"application/json": {"schema": {"type": "object", "properties": {"id": {"type": "string", "description": "The ID.", "example": "x"}}}}}}}
+      }
+    }
+  }
+}

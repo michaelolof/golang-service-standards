@@ -127,7 +127,7 @@ A new service always needs explicit approval (HTTP-3). Small changes inside exis
 
 **Rule.** Once the tests pass:
 1. Refactor the change against the standard, keeping the tests green: names (STY-2), function shape (STY-3), the story (STY-9), comments (STY-5).
-2. Run `task check`: format, lint, architecture tests, unit tests and the integration tests for the touched packages.
+2. Run `task check`: format, lint, the standard's structural checks, unit tests and the integration tests for the touched packages.
 3. Fix what it reports. Never silence a check to get to green (Clean Code G4); an exception needs a `//nolint:<linter> // reason` and the engineer's agreement.
 
 **Why.** "Getting it working and making it clean are two different activities" (Clean Code ch 14). Doing them in that order means cleaning never breaks behaviour.
@@ -147,7 +147,7 @@ The report says completed or not completed, and shows the evidence:
 
 ```text
 Completed.
-- task check passes (lint, arch tests, 412 unit tests, 38 integration tests in repository/transfers).
+- task check passes (lint, archcheck, 412 unit tests, 38 integration tests in repository/transfers).
 - TestService_Cancel: 4 of 4 cases pass; cases unchanged from the brief.
 - Ran it: on a local instance, cancelling an INITIATED transfer returned CANCELLED and queued one event.
 - Changed: domain/transfer.go (Cancel), repository/transfers/transitions.go (CancelInitiated: one CTE),
@@ -385,7 +385,7 @@ At every level, `completed` is as far as an agent can take work. Only the engine
 
 **Rule.**
 - Each correction made twice in review becomes one of these:
-  - a lint rule or architecture test, if a machine can check it;
+  - a lint rule, or a check in the standard's analyzers or `tools/archcheck`, if a machine can check it;
   - a canonical example, if it's about shape;
   - a sentence in the relevant rule, if it needs judgement.
 - The code agents copy most (handlers, repositories, tests, `wire.go`) is cleaned first. Agents imitate the code around them, so that code teaches more than any document.

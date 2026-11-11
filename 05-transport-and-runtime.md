@@ -14,31 +14,31 @@ It builds on these documents:
 
 | ID | Rule | Enforced by |
 |---|---|---|
-| HTTP-1 | Handlers follow gofi's [GUIDELINES.md](https://github.com/michaelolof/gofi/blob/v0.10.4/GUIDELINES.md) (v0.10.4): an exported `<Operation>Handler` variable, its schema directly below, dependencies through `deps.MustGet(c)`. | arch test, review |
-| HTTP-2 | One operation per file. The package is named after its OpenAPI tag. | arch test |
+| HTTP-1 | Handlers follow gofi's [GUIDELINES.md](https://github.com/michaelolof/gofi/blob/v0.10.4/GUIDELINES.md) (v0.10.4): an exported `<Operation>Handler` variable, its schema directly below, dependencies through `deps.MustGet(c)`. | `gofihandlers`, review |
+| HTTP-2 | One operation per file. The package is named after its OpenAPI tag. | `gofihandlers` |
 | HTTP-3 | The body follows gofi HND-5. "Do the work" is one call: a service method if the capability has a justified service, otherwise a repository method. No business rules in a handler. | depguard, review |
-| HTTP-4 | Schemas use the shared envelopes, and every field has `json`, `validate`, `description` and `example` tags. | OpenAPI contract test |
-| HTTP-5 | `Info` has one kebab-case tag and a `Description`. No `OperationId`: the method and path identify the route. Lists use `limit` and `cursor` and return `next_cursor`. | OpenAPI contract test |
-| HTTP-6 | One `routes` package. Global middleware runs in a fixed order; authentication and authorization are mounted per route group. | server test, review |
+| HTTP-4 | Schemas use the shared envelopes, and every field has `json`, `validate`, `description` and `example` tags. | `tools/archcheck`, tagliatelle, review |
+| HTTP-5 | `Info` has one kebab-case tag and a `Description`. No `OperationId`: the method and path identify the route. Lists use `limit` and `cursor` and return `next_cursor`. | `gofihandlers`, review |
+| HTTP-6 | One `routes` package. Global middleware runs in a fixed order; authentication and authorization are mounted per route group. | project test (route table), review |
 | HTTP-7 | `gofi.OpenAPISpec` produces both the live docs and the committed spec, with no post-processing. CI checks for drift. | `task generate:check` |
-| JOB-1 | A job handler is named for one action. `Handle` decodes its args once and makes one call (a service method, or a repository method when there is no service). Kinds, args, the `Job` every runtime moves and the one `Enqueuer` port live in `internal/jobs`. Args carry IDs, except a hot-path job that carries its payload as opaque bytes. | arch test, review |
-| JOB-2 | The runtime adapter owns outcomes: done, retry, drop, dead-letter, defer. One mapping per runtime turns kinds into outcomes; handlers never pick one. A business schedule lives on the row, may be indexed by a sorted set, and never reaches the dead-letter queue. | registration test, review |
+| JOB-1 | A job handler is named for one action. `Handle` decodes its args once and makes one call (a service method, or a repository method when there is no service). Kinds, args, the `Job` every runtime moves and the one `Enqueuer` port live in `internal/jobs`. Args carry IDs, except a hot-path job that carries its payload as opaque bytes. | `jobs`, nilerr, review |
+| JOB-2 | The runtime adapter owns outcomes: done, retry, drop, dead-letter, defer. One mapping per runtime turns kinds into outcomes; handlers never pick one. A business schedule lives on the row, may be indexed by a sorted set, and never reaches the dead-letter queue. | project test (registrations), review |
 | JOB-3 | No lost work: record the intent in the same atomic write as the state change, enqueue after commit as a hint, and sweep for anything recorded but not done. The sweep is a core use case, and the queue adapter never reads the record store. Handlers re-read state and do nothing if the work is already done. | review |
 | JOB-4 | Periodic work is claimed before it runs, and scans only enqueue. Stream consumers commit or ack only after a durable outcome, and dead-letter with a replay path. Kinds share a stream only when they share its settings. Each runtime is an engine and an adapter. | review |
-| JOB-5 | A running job can't write to a deleted tenant: each write is conditional on the tenant's state, or made under a permit that deletion waits out. Deletion marks the tenant, waits, then cleans up. | review, test |
+| JOB-5 | A running job can't write to a deleted tenant: each write is conditional on the tenant's state, or made under a permit that deletion waits out. Deletion marks the tenant, waits, then cleans up. | project test, review |
 | CTX-1 | A ctx carries cancellation, deadlines, the trace, log attributes and adapter-private handles. Nothing else. | containedctx, review |
-| CTX-2 | Context keys are unexported `struct{}` types, accessed through `WithX` and `XFrom`. Never mutate a ctx. | arch test |
+| CTX-2 | Context keys are unexported `struct{}` types, accessed through `WithX` and `XFrom`. Never mutate a ctx. | `ctxkeys`, revive `context-keys-type`, review |
 | CTX-3 | Handlers use gofi's request context, `c.Context()`. Middleware replaces it only through `gofi.SetRequestContext`. Every request gets a deadline from `gofimw.ContextTimeout`. | forbidigo |
 | CTX-4 | `context.Background` and `TODO` appear only in `main`, `run` and tests. Detached work uses `context.WithoutCancel` plus a timeout. | forbidigo |
-| CON-1 | Every goroutine has an owner that waits for it, using `errgroup` with `SetLimit`. | arch test (`go` allowlist) |
-| CON-2 | Each long-lived loop is its own `Run(ctx)` component under `supervise.Run`. No `time.Sleep`. Work requested by a request or by core is a durable job, never a `go` statement. | forbidigo, arch test |
+| CON-1 | Every goroutine has an owner that waits for it, using `errgroup` with `SetLimit`. | `goroutines`, review |
+| CON-2 | Each long-lived loop is its own `Run(ctx)` component under `supervise.Run`. No `time.Sleep`. Work requested by a request or by core is a durable job, never a `go` statement. | forbidigo, `goroutines`, review |
 | CON-3 | Both ends of a pipe run in one errgroup, and each side closes the pipe with its error. | review |
 | LOG-1 | One process-wide logger, called as `logger.Info(stamp, ctx, event, key, value, …)`. Nothing injects a logger; nothing else calls `slog`. | forbidigo, the compiler |
 | LOG-2 | Keys are snake_case string literals. An error goes under `error` as the error value. | review |
 | LOG-3 | The event name is a constant, dotted name in the past tense. The stamp says where; the event name says what. | the compiler, review |
 | LOG-4 | Levels have fixed meanings. Secrets are redacted at the type level and by the handler. | review, `ReplaceAttr` |
 | OBS-1 | Telemetry is set up once. Instrumentation lives at the edges: HTTP middleware, the job runtime, and contrib clients in adapters. | depguard |
-| OBS-2 | Metric names are OTel-style and dotted, with UCUM units and bounded attributes. | analyzer |
+| OBS-2 | Metric names are OTel-style and dotted, with UCUM units and bounded attributes. | `metricnames`, review |
 | OBS-3 | A capability with metrics declares its own typed `Metrics` struct, built from an injected `metric.Meter`. | review |
 
 ---
@@ -59,6 +59,8 @@ This standard needs gofi v0.10.4 or later. It changes behaviour that handler cod
 
 **Why.** gofi documents one style, and its own examples, tests and agent guidance use it. Writing handlers another way would put this standard at odds with the library it is built on. A missing dependency is a wiring bug whichever style is used, so the accessor panicking is not a reason to avoid it. `wire.go` should build `Deps` completely at startup, so the panic can't happen in practice.
 
+**Enforced by** the `gofihandlers` analyzer, which checks gofi's own guidelines and could move into gofi: for every package-level `gofi.DefineHandler` under `internal/http`, an exported `<Operation>Handler` (HND-1, HND-2), the fields in order (HND-3), an unexported `<operation>Schema` declared directly below it (HND-4), and request data read from the schema, not from `c.Param`, `c.Query` or `c.HeaderVal` (HND-8). How dependencies are reached is for review.
+
 ### HTTP-2 · Files
 
 **Rule.**
@@ -66,11 +68,7 @@ This standard needs gofi v0.10.4 or later. It changes behaviour that handler cod
 - One package per resource, named after the resource's OpenAPI tag: tag `api-keys` → package `apikeys` (gofi LAY-3).
 - Helpers shared by one package's handlers go in `support.go` (gofi LAY-4).
 
-Architecture tests in `internal/architecture/boundaries_test.go` check two of these:
-- `TestHTTPHandlerFilesContainOneHandler` fails if a file under `internal/http` declares more than one gofi handler.
-- `TestHTTPHandlerDeclarationPrecedesSchemas` fails if, in a handler file, a type (the schema) is declared before the handler variable.
-
-Every project has both tests.
+**Enforced by** the `gofihandlers` analyzer: a file declares at most one gofi handler, and the package is named after its handlers' one tag, hyphens dropped. `support.go` is for review.
 
 ### HTTP-3 · The handler body
 
@@ -172,6 +170,8 @@ Without a service, step 3 is a repository call, for example `d.Transfers().Get(c
 
 **Why.** Without this rule, one codebase documented 522 of its 956 schema fields, and another 22 of 858, with no examples. SDKs generated from the spec have the same gaps.
 
+**Enforced by** `tools/archcheck`, which reads the documents committed in `docs/openapi` (HTTP-7) rather than the Go code, because only the document shows the fields a schema gets from domain types and the shared envelopes: every parameter and field has a description, and every string, number and boolean has an example. tagliatelle checks the `json` tags. The envelopes and `validate` tags are for review.
+
 ### HTTP-5 · Route info and lists
 
 **Rule.**
@@ -182,6 +182,8 @@ Without a service, step 3 is a repository call, for example `d.Transfers().Get(c
   - take `limit` (`default:"50" validate:"omitempty,min=1,max=100"`) and an opaque `cursor`;
   - return `next_cursor`, omitted when empty;
   - never use offset paging, and never claim pagination that isn't implemented, such as `NewPaginated(items, "", n)`, which always sends an empty cursor.
+
+**Enforced by** the `gofihandlers` analyzer, on each handler's `Info`: exactly one lowercase kebab-case tag, a `Description`, and no `OperationId`. A `Hidden` route isn't in the document, so it isn't checked. Lists are for review.
 
 ### HTTP-6 · Routes and middleware
 
@@ -489,6 +491,11 @@ func (h *Send) Handle(ctx context.Context, job jobs.Job) error {
 
 The handler shape is the same on every runtime. Only registration differs (JOB-4).
 
+**Enforced by:**
+- the `jobs` analyzer: a `Handle(ctx, job) error` method under `internal/workers` never calls `errx.IsKind`, `errors.Is`, `errors.As` or `errors.AsType`, so it can't pick an outcome (ERR-8); its type isn't named `Execute`, `Process`, `Worker` or `Processor`; and each `Kind` constant in `internal/jobs` is `<capability>.<action>`;
+- nilerr, for a handler that drops an error with `return nil`;
+- review, for one call per handler, IDs in args, and names that say the action.
+
 ### JOB-2 · The runtime owns outcomes
 
 **Rule.** Every job ends in one of five outcomes:
@@ -612,7 +619,7 @@ The asynq, Redis-stream and Kafka adapters each have the same function, returnin
 4. **Every enqueue carries a dedupe key** built from business identity, plus a generation where work can be re-issued. This limits copies.
 5. **Every handler re-reads state and does nothing if the work is already applied.** Every runtime here delivers at least once, so this, not the dedupe key, is what makes a job correct. External side effects are keyed by a stable reference, such as the provider reference or the ledger sequence.
 
-A registration test asserts that every job kind has bounded attempts and a dedupe mode.
+A project test of the registrations asserts that every job kind has bounded attempts and a dedupe mode.
 
 **This rule isn't specific to a database-backed queue.** Only the name `EnqueueTx` is. It looks like this on each store and runtime:
 
@@ -787,6 +794,8 @@ func SetOwnership(ctx context.Context, ownership OwnershipContext) context.Conte
 - The package that owns the value type exports `WithX(ctx, v) context.Context` and `XFrom(ctx) (T, bool)`.
 - `context.WithValue` appears only in a file named `context.go`.
 
+**Enforced by** the `ctxkeys` analyzer: `context.WithValue` only in `context.go`, and every key passed to it or to `ctx.Value` is an unexported `struct{}` type declared in the same package. revive's `context-keys-type` reports a key of a basic type, such as a string. Mutating a ctx is for review.
+
 ### CTX-3 · The request context and deadlines
 
 Since gofi v0.10.0, `c.Context()` is a per-request context. These were tested on a running server:
@@ -882,6 +891,8 @@ if err := group.Wait(); err != nil {
 
 **Don't.** An errgroup rebuilt by hand from a mutex, a WaitGroup, a semaphore channel and `firstErr`, with no panic recovery.
 
+**Enforced by** the `goroutines` analyzer, which reports a `go` statement anywhere but `internal/foundation/supervise` and `pkg/`. Whether each errgroup has a limit is for review.
+
 ### CON-2 · Loops are components, and nothing is fire-and-forget
 
 **Rule.**
@@ -891,6 +902,8 @@ if err := group.Wait(); err != nil {
 - **Waiting uses a ticker or timer selected against `ctx`**, through `foundation/ticker.Every(ctx, d, fn)`. No `time.Sleep` outside tests, and no `time.After` inside loops.
 - **Work that a request or core wants done later is a durable job** (JOB-3), never a `go` statement. An in-memory goroutine is lost on a crash or deploy.
 - **Parallelism inside one batch** is an errgroup with `SetLimit`, joined before the function returns (CON-1).
+
+**Enforced by** forbidigo, on `time.Sleep` outside tests, and the `goroutines` analyzer, on any `go` statement outside `foundation/supervise` (CON-1). Whether a loop is its own component is for review.
 
 **Why.** Counts outside tests, across three codebases: 47 `go` statements, 11 of them in `main` files; 2 `time.Sleep` calls, one of them dev-only; and errgroup in only 10 files, all in one codebase.
 
@@ -1217,5 +1230,5 @@ func NewMetrics(m metric.Meter) (Metrics, error) {
 
 **Enforced by:**
 - depguard: the OTel SDK and exporters are importable only in `foundation/telemetry` and `cmd/**`;
-- an arch test: core imports only the OTel API packages;
-- a small analyzer that checks instrument-name literals.
+- depguard: `core` imports no contrib instrumentation and no propagation package, which belong to adapters, the HTTP middleware and the job runtime;
+- the `metricnames` analyzer, on every instrument created from a `metric.Meter`: a constant name `<svc>.<capability>.<noun>`, lowercase and dotted, with no `_total`, `_ms` or `_seconds`; a unit set with `metric.WithUnit`; and a `….duration` that's a `Float64Histogram` in `s`. Attributes are for review (OBS-2).
