@@ -84,7 +84,7 @@ These haven't been decided, and nothing enforces them yet.
 |---|---|
 | How are stamps created? | By `task stamps`, which reads the clock, as the Unix time in milliseconds, wherever `__STAMP__` is written. Nobody types one, because agents told to read a clock still counted upward. A stamp has no meaning, so it's never ordered, numbered or versioned, and an edit may replace it (ERR-1). |
 | Do we build linters for stamps and event names? | No linter. The compiler enforces a literal stamp and a constant event name (ERR-1, LOG-3). `task stamps:check` fails on a new stamp `task stamps` didn't hand out, or a new repeat. It only judges new stamps, so existing ones need no sweep (ERR-1). |
-| Where do error kinds live? | Generic ones are shared, specific ones sit beside their owner (ERR-5). |
+| Where do error kinds live? | All in `foundation/errkinds`, with no per-package kinds and no `<pkg>_` prefix. A kind is added only when code branches on it. A handler that wants its own client message keeps the general kind and adds `.WithMsg(...)` after checking it (ERR-5, ERR-7). |
 | Does every error response include `retryable`? | Yes (ERR-7). |
 | Are the errors from gofi's `c.Next()` and `c.Send()` wrapped? | No. Their errors go back unchanged, and lint's ignore list grows by those two methods only (ERR-3). |
 | How are wrapcheck's gaps closed? | With the standard's own `wrapgaps` plugin, which reports direct returns in closures and generic calls, using wrapcheck's ignore lists. A check in the arch test wouldn't fail with the other lint, and wrapcheck skips closures on purpose (ERR-3). |
@@ -108,7 +108,15 @@ These haven't been decided, and nothing enforces them yet.
 | Are inbound request IDs trusted? | No. The server generates every request ID and ignores `X-Request-ID` from the client. A reference the client chooses, such as an idempotency key, is a field in that endpoint's schema (HTTP-6). |
 | What happens when a param can't be stored in its field? | A 500, and the handler doesn't run. |
 | Does a failed assertion inside `Decode` that isn't on the input stay a 500? | Yes. |
-| What's the background job contract? | One handler shape, and each queue technology stays (JOB-1). |
+| What's the background job contract? | One handler shape, `Handle(ctx, jobs.Job) error`, and each queue technology stays (JOB-1). |
+| Where do job kinds and args live? | In `internal/jobs`, a flat layer beside `ports` that core, repositories, adapters and workers may import (JOB-1, LAY-6). |
+| One producer port, or one per kind? | One: `jobs.Enqueuer`, taking a `jobs.Job` whose body is bytes. A kind's attempts, timeout and stream are registered once with the runtime (JOB-1). |
+| Can a job carry its payload? | Only a hot-path job whose design needs it, said in its kind's doc comment. The payload moves as opaque bytes, sealed if sensitive, and is decoded once on the handler's side. The record stays the truth (JOB-1). |
+| Can a sorted set index a business retry schedule? | Yes. The row stays the schedule, the sorted set is a hint the sweep repairs, and a schedule that runs out is a terminal state on the row, not a dead letter (JOB-2). |
+| Where does the sweep live when the record and the queue are in different stores? | In core. It reads the record store through a repository and enqueues through `jobs.Enqueuer`. The queue adapter never reads the record store (JOB-3). |
+| One stream per job kind? | No. Kinds share a stream when they share its claim idle time, delivery limit and concurrency, and a kind that needs different ones gets its own (JOB-4). |
+| What is a dead-letter stream called? | `<service>:dlq:<queue>`, beside `<service>:ready:<queue>` and `<service>:due:<queue>` (JOB-4, DATA-10). |
+| What stops a job writing to a tenant deleted while it ran? | A conditional write where one statement can check the tenant, otherwise a permit that deletion waits out. Drop and a cleanup that runs again aren't enough on their own (JOB-5). |
 
 ## Persistence
 

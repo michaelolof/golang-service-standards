@@ -64,7 +64,7 @@ Generated from the "Rules at a glance" tables. Don't edit it by hand. Each docum
 | ERR-2 | Create, wrap and classify errors with errx, and inspect them with stdlib `errors.Is/As/Join`. Only the errx functions ERR-2 names as forbidden are banned. |
 | ERR-3 | Wrap every error you return from a call exactly once with `errx.Wrap(stamp, err)`. The errors from gofi's `c.Next()` and `c.Send()` go back unchanged. |
 | ERR-4 | Create errors with `New*`, and add a kind only if someone branches on it. Messages are lowercase, describe the condition, use `key=%q`, and contain no PII. |
-| ERR-5 | Application kinds: generic ones in `foundation/errkinds`, capability ones beside their owner with a `<pkg>_` prefix, and only if a caller branches on them. Each transport has its own error domain with its own kinds. |
+| ERR-5 | Every application kind is declared in `foundation/errkinds`, with no per-package kinds and no `<pkg>_` prefix. A kind is added only when code branches on it, and choosing a message isn't a branch. Each transport has its own error domain with its own kinds. |
 | ERR-6 | Driver and SDK errors are inspected and translated only in repositories and adapters, with `errors.Is/As` and `errx.WrapKind`. |
 | ERR-7 | HTTP handlers return `httperr.Map(stamp, err)`, for bind errors too. One mapper, one typed response body. |
 | ERR-8 | Each job runtime has one mapping from kind to outcome. Handlers never choose an outcome. |
@@ -85,10 +85,11 @@ Generated from the "Rules at a glance" tables. Don't edit it by hand. Each docum
 | HTTP-5 | `Info` has one kebab-case tag and a `Description`. No `OperationId`: the method and path identify the route. Lists use `limit` and `cursor` and return `next_cursor`. |
 | HTTP-6 | One `routes` package. Global middleware runs in a fixed order; authentication and authorization are mounted per route group. |
 | HTTP-7 | `gofi.OpenAPISpec` produces both the live docs and the committed spec, with no post-processing. CI checks for drift. |
-| JOB-1 | A job handler is named for one action. `Handle` makes one call (a service method, or a repository method when there is no service) and returns its error. |
-| JOB-2 | The runtime adapter owns outcomes: done, retry, drop, dead-letter, defer. One mapping per runtime turns kinds into outcomes; handlers never pick one. |
-| JOB-3 | No lost work: record the intent in the same atomic write as the state change, publish after commit as a hint, and sweep for anything recorded but not done. Handlers re-read state and do nothing if the work is already done. |
-| JOB-4 | Periodic work is claimed before it runs, and scans only enqueue. Stream consumers commit or ack only after a durable outcome, and dead-letter with a replay path. |
+| JOB-1 | A job handler is named for one action. `Handle` decodes its args once and makes one call (a service method, or a repository method when there is no service). Kinds, args, the `Job` every runtime moves and the one `Enqueuer` port live in `internal/jobs`. Args carry IDs, except a hot-path job that carries its payload as opaque bytes. |
+| JOB-2 | The runtime adapter owns outcomes: done, retry, drop, dead-letter, defer. One mapping per runtime turns kinds into outcomes; handlers never pick one. A business schedule lives on the row, may be indexed by a sorted set, and never reaches the dead-letter queue. |
+| JOB-3 | No lost work: record the intent in the same atomic write as the state change, enqueue after commit as a hint, and sweep for anything recorded but not done. The sweep is a core use case, and the queue adapter never reads the record store. Handlers re-read state and do nothing if the work is already done. |
+| JOB-4 | Periodic work is claimed before it runs, and scans only enqueue. Stream consumers commit or ack only after a durable outcome, and dead-letter with a replay path. Kinds share a stream only when they share its settings. Each runtime is an engine and an adapter. |
+| JOB-5 | A running job can't write to a deleted tenant: each write is conditional on the tenant's state, or made under a permit that deletion waits out. Deletion marks the tenant, waits, then cleans up. |
 | CTX-1 | A ctx carries cancellation, deadlines, the trace, log attributes and adapter-private handles. Nothing else. |
 | CTX-2 | Context keys are unexported `struct{}` types, accessed through `WithX` and `XFrom`. Never mutate a ctx. |
 | CTX-3 | Handlers use gofi's request context, `c.Context()`. Middleware replaces it only through `gofi.SetRequestContext`. Every request gets a deadline from `gofimw.ContextTimeout`. |

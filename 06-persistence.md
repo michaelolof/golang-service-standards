@@ -220,7 +220,7 @@ func (r *Repo) CancelInitiated(ctx context.Context, args domain.CancelInitiatedT
 	// ...
 ```
 
-No rows back means a guard failed. The method returns `ErrKindNotFound` (or a capability kind such as `transfer_not_cancellable`), and core maps it.
+No rows back means a guard failed. The method returns `ErrKindNotFound` (or another kind from `errkinds`, such as `invalid_transition`), and core maps it.
 
 **Do** (create-or-get with its event, one statement). The event is inserted only if the inflow was:
 
@@ -491,19 +491,19 @@ func Trim[T any](items []T, limit int, key func(T) Cursor) Page[T] // drops the 
 
 **Rule.** Any cache follows the cache-aside, failure and invalidation bullets. The other bullets apply if your project uses Redis. A project without Redis ignores them.
 - **Cache-aside is a decorator.** It implements the same consumer port as the repository and is wired in `cmd`. Core doesn't know the cache exists.
-- **One package:** all Redis code is in `adapters/redis`, over one client (ABS-7). Each role is a file: `cache.go`, `lock.go`, `ratelimit.go`, `queue.go`. Every key family is built in `keys.go`, so code that spans families, such as deleting a project's keys, needs nothing exported.
+- **One package:** all Redis code is in `adapters/redis`, over one client (ABS-7). Each role is a file: `cache.go`, `lock.go`, `ratelimit.go`, and `queue.go` with `queue_outcome.go` for a job runtime, whose engine is in `pkg/` (JOB-4). Every key family is built in `keys.go`, so code that spans families, such as deleting a project's keys, needs nothing exported.
 - **Keys** come in two kinds, and each key family is one or the other:
 
   | | Item keys | Queue keys |
   |---|---|---|
   | What | One entry each: a cached value, a lock, a rate-limit counter, a piece of state | One long-lived key per queue: a stream, a schedule (sorted set), a dead-letter queue, and the sets that index their entries |
-  | Format | `<service>:<family>:v<N>:<id>` | `<service>:<family>:<queue>`, such as `myservice:ready:payouts` |
+  | Format | `<service>:<family>:v<N>:<id>` | `<service>:<family>:<queue>`. The families are `ready` (the stream), `due` (its schedule) and `dlq` (its dead letters): `myservice:ready:payouts`, `myservice:due:payouts`, `myservice:dlq:payouts` (JOB-4) |
   | Lifetime | Every key has a TTL | No TTL, because it would delete queued work. Each queue states its bound instead (below) |
   | Versioning | Values are private JSON structs. Bump `vN` whenever their shape changes | Each entry carries its own version field. Renaming the key would strand everything queued under the old name |
 
   - Each key family is built by one unexported function, or one constant for a queue.
   - Use the `{<service>}` hash tag only for key families that multi-key Lua scripts touch.
-  - **A queue's bound** is written in its type's doc comment, and the code keeps to it:
+  - **A queue's bound** is written in the doc comment where the queue is declared, and the code keeps to it:
     - acknowledged entries are deleted, or the stream is trimmed with `MAXLEN` or `MINID`;
     - a dead-letter queue is trimmed by length or age;
     - an index entry is removed by the same script that removes its work.
@@ -523,7 +523,7 @@ internal/adapters/redis/
   cache.go       the cache decorators
   lock.go        Lock
   ratelimit.go   RateLimiter
-  queue.go       Queue, with its bound in its doc comment
+  queue.go       the job runtime on the stream engine, with each queue's bound (JOB-4)
 ```
 
 ```go

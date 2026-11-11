@@ -539,7 +539,7 @@ func New(d Deps) (*Service, error) {
 ### ABS-7 · Adapters wrap one SDK, once
 
 **Rule.**
-- **One package per external system**, such as `adapters/redis`, `adapters/kafka` or `adapters/awskms`. It's the only package that imports that system's SDK.
+- **One package per external system**, such as `adapters/redis`, `adapters/kafka` or `adapters/awskms`. It's the only package in `internal/` that imports that system's SDK. A `pkg/` engine it builds on, such as a stream queue, may import the SDK too (JOB-4).
   - Each role the service uses the system for (cache, lock, rate limiter, queue, producer, consumer) is a file in that package, not a package of its own.
   - Connection settings (address, TLS, credentials, pool size) are applied in one function. Where one client serves every role, as with Redis, there is one client, and every role type is built from it: `redis.NewLock(client, ttl)`. Where the SDK needs a client per role, such as a Kafka client per consumer group, that same function builds each one.
   - A second package for the same system is right only for a second implementation of the same port that shares nothing with the first, such as a fake KMS for local development. A role, or the package's size, is not a reason.
@@ -575,7 +575,7 @@ func New(ctx context.Context, cfg Config) (*Wrapper, error) {
 func (w *Wrapper) GenerateDataKey(ctx context.Context, args ports.GenerateDataKeyArgs) (ports.GenerateDataKeyResult, error) {
 	out, err := w.client.GenerateDataKey(ctx, &kms.GenerateDataKeyInput{ /* ... */ })
 	if err != nil {
-		return ports.GenerateDataKeyResult{}, errx.WrapKind(1787900200002, crypto.ErrKindKeyWrapperUnavailable, err)
+		return ports.GenerateDataKeyResult{}, errx.WrapKind(1787900200002, errkinds.ErrKindUnavailable, err)
 	}
 ```
 

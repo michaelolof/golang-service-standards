@@ -12,7 +12,7 @@ Every call that creates or wraps an error, and every log call, carries a **stamp
 
 | Domain | Package and kinds | Audience | What it carries |
 |---|---|---|---|
-| Application | `errx`, with `errkinds` and capability kinds | the code | what went wrong, in business terms: `not_found`, `invalid_transition`, `crypto_key_wrapper_unavailable` |
+| Application | `errx`, with every kind in `errkinds` | the code | what went wrong, in business terms: `not_found`, `invalid_transition`, `destination_blocked` |
 | HTTP | `httperr`, with its own kinds (`NotFoundErr`, `BadRequestErr`, …) | an API client, and the access log | status code, stable `error_code`, client-safe message, retryable flag, and the subject (`WithSubject`) for logs |
 | A future transport, such as a CLI | `clierr`, with its own kinds | a person at a terminal | exit code, colour, output format |
 
@@ -26,7 +26,7 @@ Application errors are created everywhere. A transport's errors are created only
 | ERR-2 | Create, wrap and classify errors with errx, and inspect them with stdlib `errors.Is/As/Join`. Only the errx functions ERR-2 names as forbidden are banned. | forbidigo |
 | ERR-3 | Wrap every error you return from a call exactly once with `errx.Wrap(stamp, err)`. The errors from gofi's `c.Next()` and `c.Send()` go back unchanged. | wrapcheck, `wrapgaps` |
 | ERR-4 | Create errors with `New*`, and add a kind only if someone branches on it. Messages are lowercase, describe the condition, use `key=%q`, and contain no PII. | forbidigo, review |
-| ERR-5 | Application kinds: generic ones in `foundation/errkinds`, capability ones beside their owner with a `<pkg>_` prefix, and only if a caller branches on them. Each transport has its own error domain with its own kinds. | arch test |
+| ERR-5 | Every application kind is declared in `foundation/errkinds`, with no per-package kinds and no `<pkg>_` prefix. A kind is added only when code branches on it, and choosing a message isn't a branch. Each transport has its own error domain with its own kinds. | arch test, review |
 | ERR-6 | Driver and SDK errors are inspected and translated only in repositories and adapters, with `errors.Is/As` and `errx.WrapKind`. | depguard, errorlint |
 | ERR-7 | HTTP handlers return `httperr.Map(stamp, err)`, for bind errors too. One mapper, one typed response body. | arch test, golden test |
 | ERR-8 | Each job runtime has one mapping from kind to outcome. Handlers never choose an outcome. | review |
@@ -262,7 +262,14 @@ return false, errx.Wrapf(1793625664546, "check users_by_email email=%s", err, re
 ## ERR-5 · Kinds
 
 **Rule.**
-- **Generic kinds.** `foundation/errkinds` holds the classes transports distinguish:
+- **One list.** Every application kind is declared in `foundation/errkinds`, and nowhere else. No package declares kinds of its own, and no kind string has a `<pkg>_` prefix.
+- **A kind exists only for a branch.** Add one only when code checks it and does something different:
+  - core or a worker retries, skips, stops or falls back;
+  - a transport picks a status, `error_code` or job outcome that no other kind gives.
+
+  Choosing a message isn't a branch. The error's message describes it in the log (ERR-4), and a handler's `.WithMsg(...)` describes it to the client (ERR-7).
+- **Reuse before adding.** A missing API key is `not_found`, not `apikeys_key_not_found`. Before adding a kind, check whether a general one already gives callers the same branch.
+- **The general kinds** every project starts with:
 
   | Kind string | Meaning |
   |---|---|
@@ -275,26 +282,74 @@ return false, errx.Wrapf(1793625664546, "check users_by_email email=%s", err, re
   | `unavailable` | Transient dependency failure |
   | `rate_limited` | |
 
-- **Capability kinds** live beside their owner (`core/<cap>/errors.go`), and only when a caller branches on them.
-- **Naming.** The identifier is `ErrKind<Name>`. The string is snake_case. Outside `errkinds`, the string is prefixed `<pkg>_`. errx compares kinds by string, so the prefix is what keeps them unique.
-- **Docs.** Each kind's doc comment says who branches on it.
+- **Naming.** The identifier is `ErrKind<Name>`. The string is snake_case, with no prefix. errx compares kinds by string, and one list is what keeps the strings unique.
+- **Docs.** Each kind's doc comment says who branches on it, and what they do.
+- **Why `foundation`.** Every layer checks kinds, `foundation` packages included (`pagination.Decode` returns `invalid_input`), and `foundation` imports only `foundation` (LAY-7). `errkinds` is the one `foundation` package that names business conditions.
 - **Application kinds know nothing about transports.** They say what happened. The HTTP domain's own kinds (`httperr.NotFoundErr`, …) carry the status code, `error_code` and message, and `httperr.Map` translates between the two (ERR-7).
 - **Where httperr lives.** `internal/http/httperr`, because only the HTTP layer uses it.
 
+**Do.** A kind beyond the general ones, with the branch that justifies it in its doc comment:
+
 ```go
-// ErrKindKeyWrapperUnavailable marks a KMS outage; ingestion maps it to 503 and workers retry.
-var ErrKindKeyWrapperUnavailable = errx.Kind("crypto_key_wrapper_unavailable")
+// internal/foundation/errkinds/errkinds.go
+
+// ErrKindDestinationBlocked marks an outbound call the SSRF rules refused.
+// Delivery checks it: a refused call never reached the destination, so delivery
+// records a known failure instead of an unknown outcome.
+var ErrKindDestinationBlocked = errx.Kind("destination_blocked")
+```
+
+**Don't.** A kind whose only reader is the HTTP mapper, there to pick a message. Core re-wraps the repository's `not_found`, and the mapper turns it back into a 404:
+
+```go
+// internal/core/apikeys/errors.go
+var ErrKindKeyNotFound = errx.Kind("apikeys_key_not_found")
+
+// internal/core/apikeys/revoke_org_key.go
+key, err := s.orgKeys.Get(ctx, org, keyID)
+if errx.IsKind(err, errkinds.ErrKindNotFound) {
+	return domain.OrgAPIKey{}, errx.WrapKind(1793803142679, ErrKindKeyNotFound, err)
+}
+
+// internal/http/httperr/map.go
+case errx.IsKind(err, apikeys.ErrKindKeyNotFound):
+	return Wrap(ts, NotFoundErr, err).WithMsg("api key not found")
+```
+
+**Do.** Core passes the `not_found` on, and the handler that wants its own message adds it after checking the kind (ERR-7):
+
+```go
+// internal/core/apikeys/revoke_org_key.go
+key, err := s.orgKeys.Get(ctx, org, keyID)
+if err != nil {
+	return domain.OrgAPIKey{}, errx.Wrap(1794361268839, err)
+}
+
+// internal/http/platform/apikeys/revoke_org_key.go
+key, err := keys.RevokeOrgKey(ctx, org, keyID)
+if errx.IsKind(err, errkinds.ErrKindNotFound) {
+	return httperr.Map(1794361270373, err).WithMsg("api key not found")
+}
+
+if err != nil {
+	return httperr.Map(1794361272298, err)
+}
 ```
 
 **Why.**
-- Kinds must only be added when code needs to make a decision. Without that rule:
+- Kinds must only be added when code needs to make a decision. Without that rule, kinds pile up wherever they're declared:
+  - One codebase grew 108 kinds outside `errkinds`. 90 were read only by the HTTP mapper, most of them to pick a message for a status a general kind already gave, and 2 were read only by tests. `apikeys_key_not_found` above is one of them.
   - A central list grew to 40 kinds. `ErrKindValidation` was created 16 times and had no mapping case, so it surfaced as a 500. `ErrKindInternal` was created 33 times and never checked.
-  - Kinds named `XErr` collide visually with httperr's `NotFoundErr`, and kebab-case and snake_case strings get mixed.
+- Kinds declared package by package get declared twice. Two packages each declared "source not found": `sources_source_not_found` and `domain_source_not_found`. A caller that checks one misses the other. In one list, the second shows up next to the first.
+- Kinds named `XErr` collide visually with httperr's `NotFoundErr`, and kebab-case and snake_case strings get mixed.
 
-**Enforced by** an arch test. It collects every `errx.Kind` declaration and asserts:
-- unique strings;
-- the naming pattern;
-- at least one creation site and at least one non-test `IsKind` reference.
+**Enforced by:**
+- an arch test. It collects every `errx.Kind` call in non-test code under `internal/` and `cmd/`, and asserts:
+  - every one is in `internal/foundation/errkinds`;
+  - unique strings;
+  - the naming pattern;
+  - at least one creation site and at least one non-test `IsKind` reference.
+- review, which checks that the reference is a branch and not a choice of message. The arch test can't tell the two apart.
 
 ## ERR-6 · Translate driver errors at the boundary
 
@@ -308,7 +363,7 @@ var ErrKindKeyWrapperUnavailable = errx.Kind("crypto_key_wrapper_unavailable")
 **Do:**
 
 ```go
-return ports.GenerateDataKeyResult{}, errx.WrapKind(1787900200002, crypto.ErrKindKeyWrapperUnavailable, err)
+return ports.GenerateDataKeyResult{}, errx.WrapKind(1787900200002, errkinds.ErrKindUnavailable, err)
 ```
 
 **Canonical:**
@@ -343,7 +398,7 @@ if stderrors.As(err, &pgErr) && pgErr.Code == "23505" {
 ## ERR-7 · One HTTP mapper, one response body
 
 **Rule.**
-- **Handlers.** A handler returns `httperr.Map(stamp, err)` for any error from `core`. It may add a client message with `.WithMsg(...)`, and it names the party affected with `.WithSubject(...)` when that isn't the caller (ERR-13).
+- **Handlers.** A handler returns `httperr.Map(stamp, err)` for any error from `core`. It may add a client message with `.WithMsg(...)` after checking the kind, which stays a general one (ERR-5). `WithMsg` replaces the message whatever the status, so an unchecked `.WithMsg("api key not found")` also goes out on the 503 for a database outage. The handler names the party affected with `.WithSubject(...)` when that isn't the caller (ERR-13).
 - **The mapper.** `Map` is the only switch from an error to an HTTP error. It checks gofi's own errors, then the most specific kind.
 - **Unknown errors** become `UNHANDLED_SERVER_ERROR`, carrying only the stamp, so searching for that code finds every error nobody mapped. `INTERNAL_SERVER_ERROR` is for a 500 someone chose, such as a response that fails validation (ERR-11).
 - **gofi's errors.** A `*gofi.HTTPError` keeps the status gofi chose, so a wrong content type stays a 415. A validation error follows ERR-11. Its text stays out of the error, because gofi's parser quotes the request body, and a token in that body would reach the log:

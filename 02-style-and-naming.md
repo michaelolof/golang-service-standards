@@ -109,7 +109,7 @@ The naming decisions from every area are collected in this one table. When a nam
 | Getter | Noun | `Minor()` | `GetMinor()` | STY-2 |
 | Enum variable | `<Type><Variant>` | `TransferStatusPending` | `PendingTransferStatus` | DOM-6 |
 | Enum wire value | UPPER_SNAKE. On a `greenfield` scope (COL-15) nothing is frozen, so rename freely. On an `existing` scope, a rename is a breaking change. | `"PENDING"` | | DOM-6 |
-| Error kind | `ErrKind<Name>` = snake_case string, prefixed `<pkg>_` outside `errkinds` | `ErrKindNotFound = "not_found"` | `NotFoundErr`, kebab-case | ERR-5 |
+| Error kind | `ErrKind<Name>` = snake_case string, declared only in `foundation/errkinds`, with no prefix | `ErrKindNotFound = "not_found"` | `NotFoundErr`, kebab-case, `apikeys_key_not_found` | ERR-5 |
 | Error variable | `err`, or `<verb>Err` for a second error in scope | `err`, `rbErr` | `e`, `pe`, `ce` | STY-2 |
 | Receiver | 1–2 letters from the type, the same on every method | `r *Repo`, `s *Service` | `self`, `this`, mixed names | STY-2 |
 | Boolean | Adjective or participle for state; `Is`/`Has`/`Can` for predicate functions | `Active`, `IsExpired()` | | STY-2 |

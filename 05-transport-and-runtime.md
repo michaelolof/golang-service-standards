@@ -21,10 +21,11 @@ It builds on these documents:
 | HTTP-5 | `Info` has one kebab-case tag and a `Description`. No `OperationId`: the method and path identify the route. Lists use `limit` and `cursor` and return `next_cursor`. | OpenAPI contract test |
 | HTTP-6 | One `routes` package. Global middleware runs in a fixed order; authentication and authorization are mounted per route group. | server test, review |
 | HTTP-7 | `gofi.OpenAPISpec` produces both the live docs and the committed spec, with no post-processing. CI checks for drift. | `task generate:check` |
-| JOB-1 | A job handler is named for one action. `Handle` makes one call (a service method, or a repository method when there is no service) and returns its error. | arch test, review |
-| JOB-2 | The runtime adapter owns outcomes: done, retry, drop, dead-letter, defer. One mapping per runtime turns kinds into outcomes; handlers never pick one. | registration test, review |
-| JOB-3 | No lost work: record the intent in the same atomic write as the state change, publish after commit as a hint, and sweep for anything recorded but not done. Handlers re-read state and do nothing if the work is already done. | review |
-| JOB-4 | Periodic work is claimed before it runs, and scans only enqueue. Stream consumers commit or ack only after a durable outcome, and dead-letter with a replay path. | review |
+| JOB-1 | A job handler is named for one action. `Handle` decodes its args once and makes one call (a service method, or a repository method when there is no service). Kinds, args, the `Job` every runtime moves and the one `Enqueuer` port live in `internal/jobs`. Args carry IDs, except a hot-path job that carries its payload as opaque bytes. | arch test, review |
+| JOB-2 | The runtime adapter owns outcomes: done, retry, drop, dead-letter, defer. One mapping per runtime turns kinds into outcomes; handlers never pick one. A business schedule lives on the row, may be indexed by a sorted set, and never reaches the dead-letter queue. | registration test, review |
+| JOB-3 | No lost work: record the intent in the same atomic write as the state change, enqueue after commit as a hint, and sweep for anything recorded but not done. The sweep is a core use case, and the queue adapter never reads the record store. Handlers re-read state and do nothing if the work is already done. | review |
+| JOB-4 | Periodic work is claimed before it runs, and scans only enqueue. Stream consumers commit or ack only after a durable outcome, and dead-letter with a replay path. Kinds share a stream only when they share its settings. Each runtime is an engine and an adapter. | review |
+| JOB-5 | A running job can't write to a deleted tenant: each write is conditional on the tenant's state, or made under a permit that deletion waits out. Deletion marks the tenant, waits, then cleans up. | review, test |
 | CTX-1 | A ctx carries cancellation, deadlines, the trace, log attributes and adapter-private handles. Nothing else. | containedctx, review |
 | CTX-2 | Context keys are unexported `struct{}` types, accessed through `WithX` and `XFrom`. Never mutate a ctx. | arch test |
 | CTX-3 | Handlers use gofi's request context, `c.Context()`. Middleware replaces it only through `gofi.SetRequestContext`. Every request gets a deadline from `gofimw.ContextTimeout`. | forbidigo |
@@ -318,17 +319,84 @@ The rules below apply to all of them. Each rule shows how it maps onto each runt
 ### JOB-1 · A job handler does one named action
 
 **Rule.**
-- **Name the handler and the job kind for the action:** `transferjobs.Initiate` with kind `transfer.initiate`, `erasure.EraseActor`, `exports.BuildCSV`, `delivery.SendWebhook`. Not `Execute`, `Process`, `Worker` or `Processor`, which don't say what is done.
-- **`Handle(ctx, args) error` makes one call** and returns its error, wrapped with a stamp:
+- **Name the handler and the job kind for the action:** `transferjobs.Initiate` with kind `transfer.initiate`, `erasure.EraseActor`, `exports.BuildCSV`, `delivery.Send`. Not `Execute`, `Process`, `Worker` or `Processor`, which don't say what is done.
+- **`Handle(ctx, job jobs.Job) error` decodes its args once, then makes one call**, and returns its error wrapped with a stamp. The call is:
   - a method on the capability's service, when it has a justified one (HTTP-3);
   - otherwise a core function or a use-case-shaped repository method (DATA-4).
-- **A handler doesn't choose its outcome.** It returns the error; the runtime adapter decides retry, drop or dead-letter (JOB-2). So there is no per-handler `classify`.
+- **A handler doesn't choose its outcome.** It returns the error, and the runtime adapter decides retry, drop or dead-letter (JOB-2). So there is no per-handler `classify`.
 - **No business branching in a handler.** If a worker reads state, decides, and calls a provider, that logic is a use case and belongs in core.
-- **Job args carry IDs only:** snake_case `json` tags, never whole entities, never secrets.
+- **Job args carry IDs only:** snake_case `json` tags, never whole entities, never secrets. The handler re-reads the record (JOB-3). The one exception is a job that carries its payload, below.
+
+**Where kinds and args live.** In `internal/jobs`, a flat layer beside `ports` (LAY-6). Core builds job args and can't import adapters, and the handlers in `workers/` decode them, so the contract sits where both can import it. It holds:
+- every job kind, as a `Kind` constant whose doc comment says what the job does;
+- each kind's args type;
+- `Job`, the one thing every runtime moves: a small header the runtime reads, and a body it never reads;
+- `Enqueuer`, the one producer port, with `New` and `Decode`.
+
+```go
+// internal/jobs/jobs.go
+
+// Job is what every runtime moves. The runtime reads the header fields and never
+// Body: the producer encodes Body once, and only the handler's side decodes it.
+type Job struct {
+	Kind     Kind
+	TenantID domain.TenantID
+	// Key is the dedupe key: the business identity, plus a generation where the
+	// work can be re-issued (JOB-3).
+	Key  string
+	Body []byte
+	// RunAt delays the first attempt. Zero runs it now.
+	RunAt time.Time
+}
+
+// Enqueuer puts a job on its runtime. Each runtime's adapter implements it.
+type Enqueuer interface {
+	Enqueue(ctx context.Context, job Job) error
+}
+
+// New builds a job whose body is args, encoded as JSON. A job that carries a
+// sealed payload sets Body itself instead.
+func New(kind Kind, tenant domain.TenantID, key string, args any) (Job, error) {
+	body, err := json.Marshal(args)
+	if err != nil {
+		return Job{}, errx.Wrap(1794362478810, err)
+	}
+
+	return Job{Kind: kind, TenantID: tenant, Key: key, Body: body}, nil
+}
+
+// Decode reads a job's JSON body into T. A body that doesn't decode is
+// invalid_input, which every runtime dead-letters (JOB-2).
+func Decode[T any](job Job) (T, error) {
+	var args T
+	if err := json.Unmarshal(job.Body, &args); err != nil {
+		return args, errx.WrapKind(1794362475117, errkinds.ErrKindInvalidInput, err)
+	}
+
+	return args, nil
+}
+```
+
+**One producer port for every kind.** Core depends on `jobs.Enqueuer`, never on a queue type per kind.
+- Settings that belong to a kind, such as its attempts, timeout and stream, are registered once with the runtime (JOB-4). They aren't arguments.
+- What varies per call, the dedupe key and a start time, are fields of `Job`.
+- A body that is already bytes goes into `Body` as it is. The port has nothing to encode, and the runtime writes the body unchanged.
+
+**A job that carries its payload.** A hot-path job may carry the data it acts on, when its design requires that the handler doesn't read it back from the store on every attempt. A webhook delivery that carries the request it sends is the example. Such a job:
+- says so, with the reason, in its kind's doc comment;
+- keeps the record in the store as the truth. The body is a copy, and the sweep rebuilds the job from the record (JOB-3);
+- moves as an ordinary `jobs.Job`, with the IDs in its header and the payload in `Body` as opaque bytes;
+- is sealed by its producer when the payload is sensitive: encrypted with the tenant's key, with the header authenticated as additional data, so a body can't be replayed under another tenant, kind or job;
+- is decoded once, on the handler's side: by the handler, or by the one core call it makes when core holds the key. No layer between the producer and the handler decodes, re-encodes or strips it, the runtime included.
 
 **Why.**
 - Names like `Handle`, `Process`, `ProcessMessage`, `ProcessProbeJob`, `RunOnce`, `Run`, `Execute` and `Dispatch` don't say what the job does. A job called `ExecuteVendorTransfer` loads an INITIATED transfer, starts dispatch, calls the provider and binds the provider reference. In other words, it *initiates the transfer at the provider*, so `Initiate` is the name.
 - Of 24 handlers in one codebase, 5 made one service call, 11 were scans, and the rest put repository calls, provider calls and domain branching inside the worker.
+- Three codebases kept the job contract in three places:
+  - one kept job args in `adapters/queue/jobs`, so its services imported an adapter to enqueue;
+  - one gave each queue its own port, typed with a domain struct, with `Consume`, `Ack` and `AutoClaim` next to `Publish`;
+  - one had a single runtime-neutral `Task` with a `[]byte` payload. That is the shape kept here.
+- In the codebase with a port per queue, the Redis adapter type-switched over three domain types to build each job's header. It removed fields from the event before sealing it, and decoded the body again on the way out to compare it with the header. So the adapter decided what each job carried, and imported core to do it.
 
 **Do, without a service.** One bounded unit of work, calling repositories directly:
 
@@ -345,7 +413,7 @@ return nil
 
 Two things to change in it:
 - The two writes should be one use-case-shaped repository method, `EraseActor`, so they can't half-happen (DATA-4).
-- The same handler drops a payload that doesn't decode, with a bare `return nil` and no log. It should be dead-lettered (JOB-2).
+- The same handler drops a payload that doesn't decode, with a bare `return nil` and no log. It should be dead-lettered (JOB-2), which `jobs.Decode` gets by returning `invalid_input`.
 
 **Don't.** The worker reads the transfer, applies the terminal-state rule, looks up the provider, calls it, and decides to cancel. That is a use case running inside a transport.
 
@@ -357,8 +425,13 @@ Two things to change in it:
 // Initiate submits an accepted transfer to its custody provider.
 type Initiate struct{ transfers *transfer.Service }
 
-func (h *Initiate) Handle(ctx context.Context, args jobs.TransferInitiate) error {
-	_, err := h.transfers.Initiate(ctx, transfer.InitiateArgs{TenantID: args.TenantID, TransferID: args.TransferID, OperationID: args.OperationID})
+func (h *Initiate) Handle(ctx context.Context, job jobs.Job) error {
+	args, err := jobs.Decode[jobs.TransferInitiate](job)
+	if err != nil {
+		return errx.Wrap(1794362484411, err)
+	}
+
+	_, err = h.transfers.Initiate(ctx, transfer.InitiateArgs{TenantID: args.TenantID, TransferID: args.TransferID, OperationID: args.OperationID})
 	if err != nil {
 		return errx.Wrap(1791237019732, err)
 	}
@@ -375,7 +448,12 @@ func (h *Initiate) Handle(ctx context.Context, args jobs.TransferInitiate) error
 // EraseActor records an actor's erasure and marks their data keys erased, in one write.
 type EraseActor struct{ erasures *erasures.Repo }
 
-func (h *EraseActor) Handle(ctx context.Context, args jobs.EraseActor) error {
+func (h *EraseActor) Handle(ctx context.Context, job jobs.Job) error {
+	args, err := jobs.Decode[jobs.EraseActor](job)
+	if err != nil {
+		return errx.Wrap(1794362609377, err)
+	}
+
 	if err := h.erasures.EraseActor(ctx, args.TenantID, args.ActorID); err != nil {
 		return errx.Wrap(1791370738426, err)
 	}
@@ -384,7 +462,32 @@ func (h *EraseActor) Handle(ctx context.Context, args jobs.EraseActor) error {
 }
 ```
 
-The handler shape is the same on every runtime. Only registration differs: `queue.Register` on a database-backed queue, an asynq `ServeMux` entry, or a stream consumer's dispatch table.
+**Canonical**, a job that carries its payload:
+
+```go
+// internal/jobs/delivery.go
+
+// KindDeliverySend sends one webhook attempt. It carries its request, sealed with
+// the tenant's key, so the hot path doesn't read the event back from the store on
+// every attempt. The event record stays the truth, and the sweep rebuilds the job
+// from it (JOB-3).
+const KindDeliverySend Kind = "delivery.send"
+
+// internal/workers/delivery/send.go
+
+// Send sends one webhook attempt. Core opens the sealed body, once.
+type Send struct{ delivery *delivery.Service }
+
+func (h *Send) Handle(ctx context.Context, job jobs.Job) error {
+	if err := h.delivery.Send(ctx, job); err != nil {
+		return errx.Wrap(1794362482117, err)
+	}
+
+	return nil
+}
+```
+
+The handler shape is the same on every runtime. Only registration differs (JOB-4).
 
 ### JOB-2 · The runtime owns outcomes
 
@@ -395,21 +498,63 @@ The handler shape is the same on every runtime. Only registration differs: `queu
 | **Done** | `nil`, including "already applied" | complete | return `nil` | `XACK` | commit |
 | **Retry** | a transient failure; the default for an unknown error | return the error (backoff) | return the error | leave pending; `XAUTOCLAIM` redelivers | don't commit; seek back or pause |
 | **Drop** | the target is gone, so there's nothing to do | log, return `nil` | log, return `nil` | log, `XACK` | log, commit |
-| **Dead-letter** | poison (undecodable, `invalid_input`), or attempts exhausted | `queue.Cancel` plus a DLQ row | `asynq.SkipRetry` (archived, replayable) | `XADD <stream>.dlq`, then `XACK` | write a DLQ record, then commit |
-| **Defer** | a known later time; not counted as an attempt | `queue.Snooze(d)` | re-enqueue with `ProcessIn`, return `nil` | `ZADD` to the schedule, then `XACK` | n/a |
+| **Dead-letter** | poison (undecodable, `invalid_input`), or the runtime's attempts exhausted | `crdbque.Cancel` plus a DLQ row | `asynq.SkipRetry` (archived, replayable) | `XADD <service>:dlq:<queue>`, then `XACK` | write a DLQ record, then commit |
+| **Defer** | a known later time; not counted as an attempt | `crdbque.Snooze(d)` | re-enqueue with `ProcessIn`, return `nil` | `ZADD <service>:due:<queue>`, then `XACK` | n/a |
 
 - **Core returns errx kinds. Each runtime adapter has one mapping** from kind to native outcome, used by every handler on that runtime. This replaces per-handler `classify` functions.
 - **Every job kind has bounded attempts.** After the last one, the job is dead-lettered, never dropped silently. Redis streams have no built-in limit, so the consumer reads the delivery count from `XPENDING` and dead-letters past N.
-- **A dead-letter record** holds the original payload and headers, the error kind, the attempt count and the source coordinates. Each runtime has a replay tool in `cmd/tools`.
+- **A dead-letter record** holds the job's header and body unchanged (a sealed body stays sealed), the error kind, the attempt count and the source coordinates. Each runtime has a replay tool in `cmd/tools`.
 - **The runtime also owns:** a per-job timeout, panic recovery, backoff with jitter, the single failure log (ERR-9), and the consumer span and metrics if the project has telemetry. Handlers never sleep, retry or log their own failure.
-- **A business retry schedule** (an attempt count and `next_attempt_at` on the row) is fine when the schedule is business data: the KYC re-query SLA, the webhook retry policy. The job then returns `nil` and a sweep drives the next attempt. Each job kind uses one scheme or the other, never both.
+- **A business retry schedule** (an attempt count and `next_attempt_at` on the row) is fine when the schedule is business data: the KYC re-query SLA, the webhook retry policy. Then:
+  - the job records the failure and the next time on the row, and returns `nil`, so the runtime sees done;
+  - a sweep drives the next attempt (JOB-3);
+  - when the schedule runs out, the row records a terminal state, such as `failed`. That is where the business sees the job and retries it. It never goes to the runtime's dead-letter queue.
+
+  Each job kind uses one scheme or the other, never both. Both would mean two attempt counts, the row's and the runtime's, each deciding when to stop.
+- **A sorted set may index a business schedule's due times.** That is still one scheme: the row is the schedule, and the sorted set only finds what's due without a scan.
+  - The score is `next_attempt_at`, and the member is the job's dedupe key.
+  - The row is written first, and the index entry after it, as a hint. The sweep re-adds entries the index lost (JOB-3).
+  - The job re-reads the row, and does nothing if the attempt isn't due or is already done.
+- **Defer is the runtime's own later time**, picked by the mapping from an error kind such as `rate_limited`. It isn't business data and isn't an attempt.
 
 **Why.** Without one mapping per runtime:
 - Handlers decide for themselves. Only 3 of 24 handlers ever returned `Cancel`, each with its own kind check, and `Snooze` was never used. A publish worker returned `nil` even when it couldn't record the failure.
 - A `PermanentWrap` helper had no callers, and job handlers dropped a malformed payload with a bare `return nil`. An email relay detected its own `Permanent` type by type assertion, so a wrapped one was retried forever. Three relays used three different retry policies.
 - A consumer can have the right order (below) and still not cap redeliveries. If the delivery count is read only for metrics, a message that keeps failing on infrastructure is reclaimed forever (inferred from the code; not tested).
+- A stream consumer got an `exhausted` flag back from core and chose the dead-letter queue itself (the Don't below). That mixes both schemes: core counted attempts on the row, and the worker sent the job to the runtime's dead-letter queue.
 
-**Do.** Dead-letter before acknowledging, and leave the message pending on error:
+**Do.** The runtime records the outcome first, then acknowledges. This is the stream engine's settle step (JOB-4):
+
+```go
+// pkg/streamq/settle.go
+
+// settle records a message's outcome, then acknowledges it. A retry stays pending,
+// and XAUTOCLAIM redelivers it. If recording fails, the message isn't acknowledged
+// either, and it's settled again when it comes back.
+func (c *Consumer) settle(ctx context.Context, msg goredis.XMessage, out Outcome) error {
+	switch out.action {
+	case retry:
+		return nil
+	case deadLetter:
+		if err := c.deadLetter(ctx, msg, out.err); err != nil {
+			return fmt.Errorf("dead-letter %s: %w", msg.ID, err)
+		}
+	case deferred:
+		if err := c.schedule(ctx, msg, out.until); err != nil {
+			return fmt.Errorf("defer %s: %w", msg.ID, err)
+		}
+	case done, drop:
+	}
+
+	if err := c.rdb.XAck(ctx, c.stream, c.group, msg.ID).Err(); err != nil {
+		return fmt.Errorf("ack %s: %w", msg.ID, err)
+	}
+
+	return nil
+}
+```
+
+**Don't.** The worker picks the dead-letter queue from a flag core returns:
 
 ```go
 updated, exhausted, err := a.receiptProcessor.Process(ctx, msg.Job)
@@ -422,13 +567,14 @@ if exhausted && a.receiptDLQQueue != nil {
 		return
 	}
 }
-if ackErr := a.receiptQueue.Ack(ctx, a.receiptGroup, msg.MessageID); ackErr != nil { /* log */ }
 ```
+
+Fixed, core records `failed` on the receipt when its schedule runs out and returns `nil`, and the handler returns whatever core returns.
 
 **Canonical** (the one mapping for a database-backed queue):
 
 ```go
-// internal/adapters/dbqueue/outcome.go
+// internal/adapters/crdbstore/queue_outcome.go
 
 // outcome turns a handler's error into a queue outcome. It is the only place
 // that decides retry, drop or dead-letter for jobs on this runtime.
@@ -439,9 +585,9 @@ func outcome(err error) error {
 	case errx.IsKind(err, errkinds.ErrKindNotFound):
 		return nil // drop: the runtime logs it before calling outcome
 	case errx.IsKind(err, errkinds.ErrKindInvalidInput):
-		return queue.Cancel(err) // dead-letter
+		return crdbque.Cancel(err) // dead-letter
 	case errx.IsKind(err, errkinds.ErrKindRateLimited):
-		return queue.Snooze(30 * time.Second) // defer
+		return crdbque.Snooze(30 * time.Second) // defer
 	default:
 		return err // retry with backoff
 	}
@@ -457,9 +603,13 @@ The asynq, Redis-stream and Kafka adapters each have the same function, returnin
    - **CockroachDB:** the same statement or transaction. That means `EnqueueTx` when the queue lives in the same database, otherwise an outbox row.
    - **MongoDB:** the same document (an embedded `dispatch` sub-document), or a session transaction inside the repository.
    - **ScyllaDB:** an LWT batch within one partition.
-2. **Publishing after the commit is a hint, not the record.** If the publish fails, log it and move on.
-3. **A sweep re-drives every intent that is recorded but not done.** It claims its work with a lease, LWT or atomic script, so replicas don't collide. The sweep is mandatory: without it, a crash between the commit and the publish loses the work.
-4. **Every enqueue or publish carries a dedupe key** built from business identity, plus a generation where work can be re-issued. This limits copies.
+2. **Enqueueing after the commit is a hint, not the record.** If the enqueue fails, log it and move on.
+3. **A sweep re-drives every intent that is recorded but not done.**
+   - It's a core use case. It lists due intents from the record store through a repository, and calls `jobs.Enqueuer` for each one, with the job's dedupe key. A periodic job or a `Run(ctx)` component runs it (JOB-4).
+   - It claims its work with a lease, LWT or atomic script, so replicas don't collide.
+   - The queue adapter never reads or writes the record store, even when the record and the queue are in different stores, such as ScyllaDB and Redis. Knowing what is due is a business question, and the adapter only moves jobs.
+   - The sweep is mandatory: without it, a crash between the commit and the enqueue loses the work.
+4. **Every enqueue carries a dedupe key** built from business identity, plus a generation where work can be re-issued. This limits copies.
 5. **Every handler re-reads state and does nothing if the work is already applied.** Every runtime here delivers at least once, so this, not the dedupe key, is what makes a job correct. External side effects are keyed by a stable reference, such as the provider reference or the ledger sequence.
 
 A registration test asserts that every job kind has bounded attempts and a dedupe mode.
@@ -470,18 +620,27 @@ A registration test asserts that every job kind has bounded attempts and a dedup
 |---|---|---|---|---|
 | CockroachDB, database-backed queue | operation row in the transfer's transaction | best-effort `Enqueue` after commit | periodic `ListDue` scan | the next scan enqueues it |
 | MongoDB, asynq | job document with an embedded `dispatch` sub-document, one `InsertOne` | the relay enqueues with `asynq.TaskID` = document ID | the relay claims undispatched rows by lease | the lease expires and the relay re-enqueues the same task ID |
-| ScyllaDB, Redis streams | root, job record and archive obligation in one LWT batch | best-effort `Publish` to the Redis stream | a recovery loop over 256 shards, each claimed by LWT | the sweep republishes Ready and Scheduled jobs |
+| ScyllaDB, Redis streams | root, job record and archive obligation in one LWT batch | best-effort `Enqueue` to the Redis stream | a core recovery use case over 256 shards, each claimed by LWT | the sweep enqueues Ready and Scheduled jobs again |
 
-**Do.** Commit first; the publish is only a wake-up:
+**Do.** Commit first; the enqueue is only a wake-up:
 
 ```go
-// Transport failure after commit is recoverable from the registry.
-if !accepted.Duplicate {
-	if err := s.eventQueue.Publish(ctx, accepted.Event.WithAttempt(1)); err != nil {
-		logger.Warn(1791443338883, ctx, "event.publish.deferred", "event_id", accepted.Event.ID, "error", err)
-	}
+// internal/core/transfer/accept.go
+
+// The intent was committed with the transfer (rule 1). This only wakes a worker:
+// if it fails, the sweep enqueues the job.
+job, err := jobs.New(jobs.KindTransferInitiate, t.TenantID, "transfer.initiate:"+t.ID.String(),
+	jobs.TransferInitiate{TenantID: t.TenantID, TransferID: t.ID, OperationID: t.OperationID})
+if err != nil {
+	return errx.Wrap(1794362487518, err)
+}
+
+if err := s.jobs.Enqueue(ctx, job); err != nil {
+	logger.Warn(1794362478103, ctx, "transfer.enqueue.deferred", "transfer_id", t.ID, "error", err)
 }
 ```
+
+**Don't.** The sweep lives in the queue adapter. The Redis adapter lists recovery shards from ScyllaDB, reads and compare-and-sets lifecycle rows, and decides what to publish again. To do that, the adapter imports core and a repository interface, and every process that builds a queue has to hand it the lifecycle service and the repository.
 
 **Don't.** The export handler inserts the job, then `Dispatch` runs it in a goroutine rooted in `context.Background()`. No sweep looks for exports left in `created` or `processing`, so a crash or deploy leaves the export stuck forever:
 
@@ -517,17 +676,85 @@ Fixed, the handler's insert also records the intent (rule 1), and `exports.Build
    - Kafka: seek back to the failed offset, or pause the partition and back off.
    - Redis: leave the message pending. `XAUTOCLAIM` redelivers it, and it is dead-lettered past N deliveries.
 
+**Streams and job kinds.** Several kinds may share a stream, and the dispatch table picks each one's handler by the `Kind` in its header. Kinds share a stream only when they share its settings. A kind gets its own stream when one of these must differ:
+- **Claim idle time.** `XAUTOCLAIM` takes over a message that has been pending for longer than the idle time, so the idle time must be longer than the slowest kind's timeout on that stream. Otherwise a job that is still running is claimed and run twice. With one 5-minute kind on a stream of 5-second kinds, a message held by a worker that crashed waits 5 minutes to be reclaimed, whatever its kind.
+- **Concurrency.** A consumer runs a bounded number of messages at once. A slow kind that fills those slots holds up the fast kinds behind it.
+- **Delivery limit and bound.** A stream has one of each.
+
+On asynq the same split is a queue per class, such as `critical`, `standard` and `bulk`, with weights. On a database-backed queue, it's a queue name with its own concurrency.
+
+**Names.** A Redis stream `<service>:ready:<queue>` has its defer schedule at `<service>:due:<queue>` and its dead letters at `<service>:dlq:<queue>` (DATA-10). The dead-letter stream is always the `dlq` family, never a `.dlq` or `:quarantine` suffix.
+
+**Where the code lives.** Each runtime splits into an engine, which would be the same in any service, and an adapter, which names this one:
+
+| Runtime | Engine | Adapter |
+|---|---|---|
+| Database-backed queue | `pkg/crdbque` | `adapters/crdbstore`: `queue.go`, `queue_outcome.go` |
+| asynq | asynq | `adapters/redis`: `queue.go`, `queue_outcome.go` |
+| Redis streams | `pkg/streamq` | `adapters/redis`: `keys.go`, `queue.go`, `queue_outcome.go` |
+| Kafka | franz-go | `adapters/kafka`: `consumer.go`, `queue_outcome.go` |
+
+- **The engine** knows no job kind, no errkinds and no record store. As a `pkg/` library, it takes its own `Config` and a `*slog.Logger` (LOG-1), and has its own outcome type.
+- **The adapter** holds everything that names the service: the key names, the table of kinds with each one's stream, timeout and delivery limit, the one mapping from errkinds to the engine's outcomes (JOB-2), and the `jobs.Enqueuer` implementation.
+
+For Redis streams:
+
+```text
+pkg/streamq/
+  streamq.go        Config, New, and Message: the header fields and the body
+  publish.go        XADD with the header fields and the body, unchanged; dedupe by key;
+                    a payload-carrying job is also indexed by tenant (JOB-5)
+  consume.go        the loop: XREADGROUP, then XAUTOCLAIM past the claim idle time, with bounded concurrency
+  dispatch.go       the dispatch table, from kind to handler; an unknown kind is dead-lettered
+  settle.go         record the outcome, then XACK (JOB-2)
+  limit.go          the delivery limit: the count from XPENDING, dead-lettered past it
+  schedule.go       defer: ZADD to the due set, and one Lua script that moves what's due to the stream
+  deadletter.go     XADD to the dead-letter stream with the kind, error, delivery count and source;
+                    trimmed with MAXLEN
+  replay.go         put one dead letter back on its stream, then delete it
+internal/adapters/redis/
+  keys.go           every key, including each queue's ready, due and dlq names
+  queue.go          builds the engine on the shared client, implements jobs.Enqueuer, and registers
+                    each kind's stream, timeout and delivery limit, with each stream's bound
+  queue_outcome.go  the one mapping from errkinds to the engine's outcomes (JOB-2)
+internal/workers/<name>/              one handler per kind (JOB-1)
+internal/core/<capability>/sweep.go   the sweep (JOB-3)
+cmd/services/worker/wire.go           registers each handler in the dispatch table, and runs the consumer as a component (CON-2)
+cmd/tools/replay/                     lists and replays dead letters
+```
+
 **Do:**
 - Records are processed per partition, in order.
-- Each outcome is written durably: persisted, duplicate, rejected or quarantined.
+- Each outcome is written durably: persisted, duplicate, rejected or dead-lettered.
 - Coverage is advanced.
 - Only contiguous offsets are committed.
-- Poison records go to a quarantine collection with the reason and the topic, partition and offset.
+- Poison records go to a dead-letter collection with the reason and the topic, partition and offset.
 
 **Don't:**
 - On a transient error the code "stops this partition" and expects the next poll to re-read the record. But nothing seeks back, and franz-go doesn't redeliver records it already returned, so the record isn't retried until a restart or rebalance (inferred from franz-go's behaviour; not tested).
-- Quarantined records have no replay tool, even ones that are always safe to retry, such as `kms_unavailable`.
-- An undecodable message is written to `<stream>:quarantine` but not acked. It stays pending and is quarantined again on every reclaim (inferred).
+- Dead-lettered records have no replay tool, even ones that are always safe to retry, such as `kms_unavailable`.
+- An undecodable message is written to its dead-letter stream but not acked. It stays pending and is dead-lettered again on every reclaim (inferred).
+
+### JOB-5 · Work for a deleted tenant
+
+**Rule.**
+- **A job that starts after its tenant is deleted** finds its target gone and is dropped (JOB-2).
+- **A job already running is fenced.** It may have read the tenant as active, then write after cleanup:
+  - dropping doesn't stop that write;
+  - a cleanup that runs again only catches it if it runs after the last such write, and nothing bounds when that is, because a retried job can write hours later;
+  - no cleanup can take back a side effect, such as a webhook already sent.
+- **Fence each write in one of two ways:**
+  - **A conditional write**, when one atomic statement can check the tenant's state. On CockroachDB that's `INSERT … SELECT … FROM tenants WHERE id = $1 AND state = 'active'`, and on MongoDB a filter on the tenant's document. On ScyllaDB it works only when the tenant's state is in the partition being written, which is rare. Prefer it where it works (DATA-4): it needs no extra step.
+  - **A permit**, when it can't: the write goes to another store or partition, or the job has a side effect outside any store. The job takes a short lease from the tenant's lifecycle row before it reads. It runs on a ctx whose deadline is before the lease ends, and releases the lease when it's done. Taking a permit and starting deletion are compare-and-set writes on the same row, so they can't both win.
+- **Deletion runs in order:**
+  1. Mark the tenant as deleting. New permits are refused, and conditional writes stop matching.
+  2. Wait until every permit has been released or has expired.
+  3. Clean up. The cleanup is still safe to run again, after a crash partway through.
+- **Queued jobs.** A job that carries only IDs is left to be dropped when it runs. A job that carries its payload (JOB-1) keeps tenant data in the queue, so cleanup also deletes it, found through an index by the tenant ID in its header.
+
+**Why.** One codebase fences its work with permits. A permit is a 90-second lease, taken by compare-and-set on the project's lifecycle row and refused once the project is revoked. The job's ctx ends 5 seconds before the lease does. Every queued entry is also indexed by project, so deleting a project finds them.
+
+**Enforced by** review, and a test per tenant-scoped job kind that deletes the tenant between the job's read and its write, and asserts that nothing is written.
 
 ## Context
 

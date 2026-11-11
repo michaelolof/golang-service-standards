@@ -305,7 +305,7 @@ internal/core/transfer/service.go            New(Deps) (*Service, error)        
 internal/domain/transfer.go                  Transfer, TransitionTo(next, at)                DOM-5, DOM-7
 internal/domain/transfer_status.go           enumx TransferStatus + transition table         DOM-6, DOM-7
 internal/repository/transfers/transitions.go CancelInitiated: one CTE, guards in WHERE       DATA-4, DATA-7
-internal/workers/transferjobs/initiate.go    Initiate.Handle: one call, error to the runtime  JOB-1, JOB-2
+internal/workers/transferjobs/initiate.go    Initiate.Handle: decode, one call, error back    JOB-1, JOB-2
 ```
 
 Following one cancel request through those files:

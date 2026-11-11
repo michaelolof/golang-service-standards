@@ -307,15 +307,16 @@ Interfaces can also end up in three places: `internal/ports`, `domain/*_contract
 
 | Folder | Holds | May import (internal) |
 |---|---|---|
-| `foundation/<pkg>` | Business-agnostic building blocks: logger setup, telemetry, ids, clock, errkinds, pagination, canonicaljson | foundation |
+| `foundation/<pkg>` | Business-agnostic building blocks: logger setup, telemetry, ids, clock, pagination, canonicaljson. The one exception is `errkinds`, which holds every application error kind (ERR-5) | foundation |
 | `config` | Turns the environment into typed config sections. The only reader of the process environment | foundation |
 | `domain` (flat) | Entities, value objects, enumx enums, invariants, domain errors. No I/O, no infrastructure interfaces | foundation |
 | `ports` (flat) | Interfaces consumed by **two or more** `core` packages, plus their argument and result types. No constructors | domain, foundation |
-| `core/<capability>` | Use-cases and business rules for one capability. Declares the interfaces only it consumes | domain, ports, foundation, other core (acyclic) |
-| `repository/<aggregate>` | Persistence for one aggregate in the service's primary database | domain, ports, foundation, `adapters/<primarydb>`, and the `core/<capability>` whose interface it implements (LAY-7) |
-| `adapters/<system>` | Clients for every other external system, one package per system (ABS-7): broker, cache, object store, KMS, email, chains, custody | domain, ports, foundation, and the `core/<capability>` whose interface it implements (LAY-7) |
+| `jobs` (flat) | Job kinds, their args, the `Job` every runtime moves, and the one `Enqueuer` port (JOB-1). Its only code encodes and decodes args. No business logic and no runtime types | domain, foundation |
+| `core/<capability>` | Use-cases and business rules for one capability. Declares the interfaces only it consumes | domain, ports, jobs, foundation, other core (acyclic) |
+| `repository/<aggregate>` | Persistence for one aggregate in the service's primary database | domain, ports, jobs, foundation, `adapters/<primarydb>`, and the `core/<capability>` whose interface it implements (LAY-7) |
+| `adapters/<system>` | Clients for every other external system, one package per system (ABS-7): broker, cache, object store, KMS, email, chains, custody | domain, ports, jobs, foundation, and the `core/<capability>` whose interface it implements (LAY-7) |
 | `http/…` | Inbound HTTP: `server`, `routes`, `deps`, `middleware`, `httperr`, `schemas`, `<api>/<resource>` handlers | core, repository, domain, ports, foundation |
-| `workers/<name>` | Inbound async work: queue jobs, stream consumers, schedulers | core, repository, domain, ports, foundation |
+| `workers/<name>` | Inbound async work: queue jobs, stream consumers, schedulers | core, repository, domain, ports, jobs, foundation |
 | `testutils/<name>` | Shared test infrastructure | anything; imported only from `_test.go` |
 | `architecture` | Tests that encode this table | none |
 | `cmd/**` | Composition root | anything |
@@ -433,11 +434,12 @@ var layers = []struct {
 	{"internal/foundation", []string{"internal/foundation"}},
 	{"internal/domain", []string{"internal/foundation"}},
 	{"internal/ports", []string{"internal/domain", "internal/foundation"}},
-	{"internal/core", []string{"internal/core", "internal/ports", "internal/domain", "internal/foundation"}},
-	{"internal/repository", []string{"internal/core", "internal/ports", "internal/domain", "internal/foundation", "internal/adapters"}},
-	{"internal/adapters", []string{"internal/core", "internal/ports", "internal/domain", "internal/foundation"}},
+	{"internal/jobs", []string{"internal/domain", "internal/foundation"}},
+	{"internal/core", []string{"internal/core", "internal/ports", "internal/jobs", "internal/domain", "internal/foundation"}},
+	{"internal/repository", []string{"internal/core", "internal/ports", "internal/jobs", "internal/domain", "internal/foundation", "internal/adapters"}},
+	{"internal/adapters", []string{"internal/core", "internal/ports", "internal/jobs", "internal/domain", "internal/foundation"}},
 	{"internal/http", []string{"internal/core", "internal/repository", "internal/ports", "internal/domain", "internal/foundation", "internal/http"}},
-	{"internal/workers", []string{"internal/core", "internal/repository", "internal/ports", "internal/domain", "internal/foundation"}},
+	{"internal/workers", []string{"internal/core", "internal/repository", "internal/ports", "internal/jobs", "internal/domain", "internal/foundation"}},
 	{"pkg", []string{"pkg"}},
 }
 ```
