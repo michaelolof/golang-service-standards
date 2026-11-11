@@ -29,10 +29,10 @@ func TestCheck_AStandardProjectPasses(t *testing.T) {
 }
 
 // Every check reports what it's for, beside clean cases that stay quiet: a
-// commented variable, a variable no tag reads, a README in testdata, fakes in internal and external
-// tests, an interface used only in its own foundation package, an asserted
-// adapter, a kind in a mapping table, a binary with no test code and a fully
-// documented operation.
+// commented variable, a variable no tag reads, a README in testdata, fakes in
+// internal and external tests, an interface used only in its own foundation
+// package, the job port core uses, an asserted adapter, a kind in a mapping
+// table, a binary with no test code and a fully documented operation.
 func TestCheck_ReportsEachProblem(t *testing.T) {
 	want := []string{
 		"cmd/services/api/main.go: this binary carries test code: github.com/michaelolof/errx/leaky imports testing. Replace that library, or the package of ours that imports it (TEST-13)",
@@ -46,12 +46,13 @@ func TestCheck_ReportsEachProblem(t *testing.T) {
 		"internal/config/mongo.go:7: MONGO_DATABASE is read here, and .env.example doesn't list it (LAY-13)",
 		"internal/core/payout/payout.go:5: Clock has the same methods as clock.Clock: declare it once, in internal/ports when several packages need it (ABS-1)",
 		"internal/core/transfer/README.md: a README.md beside Go code goes stale: move what it says into the package's doc comment (LAY-11)",
-		"internal/core/transfer/transfer.go:18: nothing implements Unused, not even a test fake: delete it until something does (ABS-1)",
+		"internal/core/transfer/transfer.go:19: nothing implements Unused, not even a test fake: delete it until something does (ABS-1)",
 		"internal/foundation/clock/clock.go:8: nothing implements Unwatched, not even a test fake: delete it until something does (ABS-1)",
 		"internal/foundation/clock/clock.go:8: nothing uses Unwatched: delete it until something does (ABS-1)",
 		"internal/foundation/errkinds/errkinds.go:8: nothing checks ErrKindConflict with errx.IsKind: a kind exists only for code that branches on it (ERR-5)",
 		"internal/foundation/errkinds/errkinds.go:9: nothing outside errkinds uses ErrKindUnused: delete it (ERR-5)",
 		"internal/foundation/errkinds/errkinds.go:10: nothing creates an error of kind ErrKindChecked, so checking for it never matches (ERR-5)",
+		"internal/jobs/jobs.go:15: nothing outside internal/jobs uses Claimer: jobs holds the contract other packages share, so delete it until one does (ABS-1, JOB-1)",
 		"internal/ports/ports.go:8: nothing outside internal/ports uses Unshared: a port is shared by several packages, so move it to its one consumer or delete it (ABS-1)",
 		"internal/repository/transfers/repo.go:11: Repo is used as transfer.Store: declare var _ transfer.Store = (*Repo)(nil) beside it, so a change that breaks it fails here (ABS-2)",
 	}

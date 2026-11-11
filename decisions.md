@@ -91,7 +91,7 @@ These haven't been decided, and nothing enforces them yet.
 | Are domain types the one type used across every boundary? | Yes, between layers. `domain` imports no driver (DOM-4). |
 | Are database schema types domain types? | No, whatever the database. A schema type is private to the repository, and its fields may use domain types (DATA-2). |
 | Does enumx guarantee an order? | No. `Values()` comes from a map, so code that needs an order sorts (DOM-6). |
-| Where may an interface be declared away from its consumer? | In `ports/` when several packages share it, and in `foundation/` for the few every layer uses, such as `clock.Clock` (ABS-1). |
+| Where may an interface be declared away from its consumer? | In `ports/` when several packages share it, in `foundation/` for the few every layer uses, such as `clock.Clock`, and in `jobs/` for the one producer port, `jobs.Enqueuer`. iface's `unused` check is off in all three, and `tools/archcheck` checks that something outside `ports/` and `jobs/` uses each of theirs (ABS-1, JOB-1). |
 | Does gofi's `Deps` follow ABS-1's limit of 7 methods? | No. It has one accessor for each dependency, as gofi DEP-2 requires, and is the one interface with no limit. Its accessors may return interfaces. Its constructor returns a struct (ABS-1, ABS-2). |
 | May a function return gofi's interfaces, such as `gofi.Router`? | Yes. ireturn allows them (ABS-2). |
 
@@ -131,6 +131,7 @@ These haven't been decided, and nothing enforces them yet.
 | Can a job carry its payload? | Only a hot-path job whose design needs it, said in its kind's doc comment. The payload moves as opaque bytes, sealed if sensitive, and is decoded once on the handler's side. The record stays the truth (JOB-1). |
 | Can a sorted set index a business retry schedule? | Yes. The row stays the schedule, the sorted set is a hint the sweep repairs, and a schedule that runs out is a terminal state on the row, not a dead letter (JOB-2). |
 | Where does the sweep live when the record and the queue are in different stores? | In core. It reads the record store through a repository and enqueues through `jobs.Enqueuer`. The queue adapter never reads the record store (JOB-3). |
+| How does the record learn that its job was dead-lettered, or replayed? | Through core. The engine's `Config` takes an optional `DeadLettered` callback, called after the dead letter is written and before the message is acknowledged, and the composition root binds it to a core use case that marks the record, so the sweep skips it. Whatever replays a dead letter, the replay tool or an admin endpoint, calls a core use case that marks the record due again, then re-queues. The adapter only passes the callback on (JOB-3). |
 | One stream per job kind? | No. Kinds share a stream when they share its claim idle time, delivery limit and concurrency, and a kind that needs different ones gets its own (JOB-4). |
 | What is a dead-letter stream called? | `<service>:dlq:<queue>`, beside `<service>:ready:<queue>` and `<service>:due:<queue>` (JOB-4, DATA-10). |
 | What stops a job writing to a tenant deleted while it ran? | A conditional write where one statement can check the tenant, otherwise a permit that deletion waits out. Drop and a cleanup that runs again aren't enough on their own (JOB-5). |

@@ -367,7 +367,7 @@ func (t Transfer) TransitionTo(next TransferStatus, at time.Time) (Transfer, err
 **Rule.**
 - **Where.** The package that calls the methods declares the interface. It declares **one** interface per dependency, listing every method that package calls on it: one `Store` for the transfer repository, not one interface per function. Aim for 1 to 5 methods; 7 is the hard limit, and past it the dependency usually has two roles.
 - **Types.** Signatures use only `domain` and stdlib types, or `ports` types for a shared interface. Argument and result structs that a store method needs live in `domain`, beside the entity, such as `domain.CancelInitiatedTransferArgs`. The consumer and the implementation then share them, and nothing is declared twice. Never use types from the implementer's package.
-- **Shared.** When two or more packages need the same set of methods, declare it once in `ports/` instead of twice. `foundation/` declares the few interfaces every layer uses, such as `clock.Clock` and `ids.Generator` (DOM-1, DOM-3).
+- **Shared.** When two or more packages need the same set of methods, declare it once in `ports/` instead of twice. `foundation/` declares the few interfaces every layer uses, such as `clock.Clock` and `ids.Generator` (DOM-1, DOM-3). `jobs/` declares the one producer port, `jobs.Enqueuer`: core enqueues through it, and each runtime's adapter implements it (JOB-1).
 - **One exception: gofi's `Deps`.** HTTP handlers get their dependencies from `deps.MustGet(c)`, and `Deps` is an interface with one accessor for each dependency, returning an interface where the dependency has a real and a fake implementation (HTTP-1, gofi DEP-1 and DEP-2). It grows with the service, so it has no method limit. It doesn't make handlers depend on more than they use, because each handler calls only the accessors it needs.
 - **No stranded interfaces.** Every interface has at least one consumer outside its own declaration and at least one implementation in the module, test fakes included.
 
@@ -389,11 +389,11 @@ If you need to embed an interface in a fake, the interface is too big.
 
 **Enforced by:**
 - `interfacebloat` (max 7), except in `internal/http/deps/`.
-- `iface`'s `unused` check. It reports an interface that nothing in its own package uses, which is the right test for a consumer, because the consumer declares the interface where it uses it. `ports/` and `foundation/` are excluded, because their interfaces are used only by other packages.
+- `iface`'s `unused` check. It reports an interface that nothing in its own package uses, which is the right test for a consumer, because the consumer declares the interface where it uses it. `ports/`, `foundation/` and `jobs/` are excluded, because their interfaces are used only by other packages.
 - `tools/archcheck`, which reads the whole module, tests included. For every interface in `internal/` with a method, outside test packages and `internal/http/deps`, it reports:
   - no implementation, in the module, its tests or a package it imports, such as a driver's pool;
-  - a port in `internal/ports` that nothing outside `ports` uses, and an interface in `internal/foundation` that nothing uses;
-  - the same method set as an interface in another package. The copy outside `ports` and `foundation` is the one reported.
+  - a port in `internal/ports` that nothing outside `ports` uses, an interface in `internal/jobs` that nothing outside `jobs` uses, and an interface in `internal/foundation` that nothing uses;
+  - the same method set as an interface in another package. The copy outside `ports`, `foundation` and `jobs` is the one reported.
 - The `layers` analyzer and depguard, for the types: `core` and `ports` can't import a repository, an adapter or an SDK, so their interfaces can't name those packages' types. Whether a signature uses only domain and stdlib types is otherwise for review.
 
 **Do.** One interface for the dependency, listing the methods this package calls:
@@ -683,7 +683,7 @@ func (c *OIDCClient) AuthorizeURL(s, p string) string { return c.client.Authoriz
 **Enforced by.**
 - review, for speculative code. A reviewer lists what nothing reaches, from any binary or test, with `go run golang.org/x/tools/cmd/deadcode@v0.52.0 -test ./...`. It isn't a check in `task check`: some of what it lists is kept on purpose, such as a logger's `Debug` that nothing calls yet, and a finding there has no line to record why. Its findings in test files and test packages wait for TEST-14's pause to end.
 - `interfacebloat` (max 7), except in `internal/http/deps/` (ABS-1).
-- `iface` (`identical`, `unused`, `opaque`). `unused` is off in `ports/` and `foundation/` (ABS-1).
+- `iface` (`identical`, `unused`, `opaque`). `unused` is off in `ports/`, `foundation/` and `jobs/` (ABS-1).
 - `ireturn`, which allows gofi's own interfaces, and is off in `internal/http/deps/`.
 - `embeddedstructfieldcheck` (`forbid-mutex`).
 - `reassign`.

@@ -5,6 +5,7 @@ import (
 	"example.com/bad/internal/domain"
 	"example.com/bad/internal/foundation/clock"
 	"example.com/bad/internal/foundation/errkinds"
+	"example.com/bad/internal/jobs"
 	"example.com/bad/internal/ports"
 	"github.com/michaelolof/errx"
 )
@@ -34,6 +35,7 @@ type Deps struct {
 	Notifier Notifier
 	Lister   Lister
 	Unused   Unused
+	Jobs     jobs.Enqueuer
 }
 
 // Service orchestrates transfers.

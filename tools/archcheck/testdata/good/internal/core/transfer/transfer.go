@@ -3,6 +3,7 @@ package transfer
 
 import (
 	"example.com/good/internal/foundation/errkinds"
+	"example.com/good/internal/jobs"
 	"github.com/michaelolof/errx"
 )
 
@@ -10,7 +11,10 @@ import (
 type Store interface{ Get(id [16]byte) error }
 
 // Deps are the service's dependencies.
-type Deps struct{ Store Store }
+type Deps struct {
+	Store Store
+	Jobs  jobs.Enqueuer
+}
 
 // Service orchestrates transfers.
 type Service struct{ store Store }

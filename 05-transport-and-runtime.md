@@ -23,7 +23,7 @@ It builds on these documents:
 | HTTP-7 | `gofi.OpenAPISpec` produces both the live docs and the committed spec, with no post-processing. CI checks for drift. | `task generate:check` |
 | JOB-1 | A job handler is named for one action. `Handle` decodes its args once and makes one call (a service method, or a repository method when there is no service). Kinds, args, the `Job` every runtime moves and the one `Enqueuer` port live in `internal/jobs`. Args carry IDs, except a hot-path job that carries its payload as opaque bytes. | `jobs`, nilerr, review |
 | JOB-2 | The runtime adapter owns outcomes: done, retry, drop, dead-letter, defer. One mapping per runtime turns kinds into outcomes; handlers never pick one. A business schedule lives on the row, may be indexed by a sorted set, and never reaches the dead-letter queue. | project test (registrations), review |
-| JOB-3 | No lost work: record the intent in the same atomic write as the state change, enqueue after commit as a hint, and sweep for anything recorded but not done. The sweep is a core use case, and the queue adapter never reads the record store. Handlers re-read state and do nothing if the work is already done. | review |
+| JOB-3 | No lost work: record the intent in the same atomic write as the state change, enqueue after commit as a hint, and sweep for anything recorded but not done. The sweep is a core use case, and the queue adapter never reads the record store. A dead letter and its replay reach the record through core: the engine calls a callback that core binds, and the replay tool calls core first. Handlers re-read state and do nothing if the work is already done. | review |
 | JOB-4 | Periodic work is claimed before it runs, and scans only enqueue. Stream consumers commit or ack only after a durable outcome, and dead-letter with a replay path. Kinds share a stream only when they share its settings. Each runtime is an engine and an adapter. | review |
 | JOB-5 | A running job can't write to a deleted tenant: each write is conditional on the tenant's state, or made under a permit that deletion waits out. Deletion marks the tenant, waits, then cleans up. | project test, review |
 | CTX-1 | A ctx carries cancellation, deadlines, the trace, log attributes and adapter-private handles. Nothing else. | containedctx, review |
@@ -510,7 +510,7 @@ The handler shape is the same on every runtime. Only registration differs (JOB-4
 
 - **Core returns errx kinds. Each runtime adapter has one mapping** from kind to native outcome, used by every handler on that runtime. This replaces per-handler `classify` functions.
 - **Every job kind has bounded attempts.** After the last one, the job is dead-lettered, never dropped silently. Redis streams have no built-in limit, so the consumer reads the delivery count from `XPENDING` and dead-letters past N.
-- **A dead-letter record** holds the job's header and body unchanged (a sealed body stays sealed), the error kind, the attempt count and the source coordinates. Each runtime has a replay tool in `cmd/tools`.
+- **A dead-letter record** holds the job's header and body unchanged (a sealed body stays sealed), the error kind, the attempt count and the source coordinates. Each runtime has a replay tool in `cmd/tools`. The job's own record learns of both steps through core, so the sweep neither re-queues a dead letter nor misses a replayed one (JOB-3, rule 6).
 - **The runtime also owns:** a per-job timeout, panic recovery, backoff with jitter, the single failure log (ERR-9), and the consumer span and metrics if the project has telemetry. Handlers never sleep, retry or log their own failure.
 - **A business retry schedule** (an attempt count and `next_attempt_at` on the row) is fine when the schedule is business data: the KYC re-query SLA, the webhook retry policy. Then:
   - the job records the failure and the next time on the row, and returns `nil`, so the runtime sees done;
@@ -611,13 +611,19 @@ The asynq, Redis-stream and Kafka adapters each have the same function, returnin
    - **MongoDB:** the same document (an embedded `dispatch` sub-document), or a session transaction inside the repository.
    - **ScyllaDB:** an LWT batch within one partition.
 2. **Enqueueing after the commit is a hint, not the record.** If the enqueue fails, log it and move on.
-3. **A sweep re-drives every intent that is recorded but not done.**
+3. **A sweep re-drives every intent that is recorded but not done**, except work whose job was dead-lettered (rule 6).
    - It's a core use case. It lists due intents from the record store through a repository, and calls `jobs.Enqueuer` for each one, with the job's dedupe key. A periodic job or a `Run(ctx)` component runs it (JOB-4).
    - It claims its work with a lease, LWT or atomic script, so replicas don't collide.
    - The queue adapter never reads or writes the record store, even when the record and the queue are in different stores, such as ScyllaDB and Redis. Knowing what is due is a business question, and the adapter only moves jobs.
    - The sweep is mandatory: without it, a crash between the commit and the enqueue loses the work.
 4. **Every enqueue carries a dedupe key** built from business identity, plus a generation where work can be re-issued. This limits copies.
 5. **Every handler re-reads state and does nothing if the work is already applied.** Every runtime here delivers at least once, so this, not the dedupe key, is what makes a job correct. External side effects are keyed by a stable reference, such as the provider reference or the ledger sequence.
+6. **The record learns when its job is dead-lettered, and when the dead letter is replayed.** Without that, the record still says the work is due: the sweep queues it again, the runtime dead-letters it again, and this repeats forever. Replay has the mirror problem: a job put back on its queue while its record says dead-lettered is work no sweep covers. The queue adapter still never touches the record store:
+   - **The engine tells the service.** The engine's `Config` takes an optional `DeadLettered` callback, given the message and the cause. The engine calls it after it writes the dead letter, and before it acknowledges the message (JOB-4). If the callback fails, the message isn't acknowledged, like any outcome the engine couldn't record (JOB-2), so it comes back and is dead-lettered again. The second dead letter is harmless: replaying either one queues the same job, with the same dedupe key, and the handler re-reads state (rule 5).
+   - **Core marks the record.** The adapter's constructor takes the callback, typed with `jobs.Job`, and passes it to the engine. The composition root binds it to a core use case, such as `DeadLettered(ctx, job)`, which marks the record dead-lettered through a repository. The sweep skips that state. The use case moves a record only from due to dead-lettered, and returns `nil` when there's nothing to mark: a kind with no record, a record already done, or one a newer generation replaced. When kinds belong to different capabilities, `wire.go` picks the use case by the job's kind, as the dispatch table picks the handler.
+   - **Replay goes through core first.** Whatever replays a dead letter, the replay tool or an admin endpoint, first calls the matching use case, such as `Replaying(ctx, job)`, which moves a dead-lettered record back to due. Only then does it put the dead letter back on its queue. If it stops between the two, the record is due, so the sweep queues the job. A replay that skips this runs the job against a record that still says dead-lettered, and a state machine that only lets a dead-lettered record become due again refuses to mark it done.
+   - **The service and the queue need each other:** the service enqueues through the queue, and the queue reports dead letters to the service. So `wire.go` declares the service's variable first, builds the queue with a closure that calls it, then builds the service. Nothing is consumed until `run` starts the components, after `wire` returns, so the closure never runs early (LAY-3).
+   - **On a runtime the project doesn't own:** the Kafka adapter writes the dead-letter record itself, so it calls the callback after that write and before it commits. asynq archives a task itself after the handler returns, and has no hook after that, so its adapter calls the callback just before it returns the dead-letter outcome.
 
 A project test of the registrations asserts that every job kind has bounded attempts and a dedupe mode.
 
@@ -644,6 +650,37 @@ if err != nil {
 
 if err := s.jobs.Enqueue(ctx, job); err != nil {
 	logger.Warn(1794362478103, ctx, "transfer.enqueue.deferred", "transfer_id", t.ID, "error", err)
+}
+```
+
+**Do.** The engine writes the dead letter, then tells the service, and `settle` acknowledges only after both (rule 6). One codebase works this way: the callback moves the job's row to a `QUARANTINED` state, its recovery sweep publishes only `READY` and `SCHEDULED` rows, and its replay tool moves the row back to `READY` before it puts the message back.
+
+```go
+// pkg/streamq/deadletter.go
+
+// deadLetter writes a message to the dead-letter stream unchanged, with the cause,
+// then calls Config.DeadLettered, so the service can mark the work's record and
+// its sweep stops queueing it. settle acknowledges the message only after both, so
+// if either fails, the message comes back and is dead-lettered again.
+func (c *Consumer) deadLetter(ctx context.Context, msg goredis.XMessage, cause error) error {
+	err := c.rdb.XAdd(ctx, &goredis.XAddArgs{
+		Stream: c.dlq,
+		MaxLen: c.cfg.DeadLetterMaxLen,
+		Values: deadLetterValues(msg, cause),
+	}).Err()
+	if err != nil {
+		return fmt.Errorf("write dead letter %s: %w", msg.ID, err)
+	}
+
+	if c.cfg.DeadLettered == nil {
+		return nil
+	}
+
+	if err := c.cfg.DeadLettered(ctx, messageOf(msg), cause); err != nil {
+		return fmt.Errorf("record dead letter %s: %w", msg.ID, err)
+	}
+
+	return nil
 }
 ```
 
@@ -717,17 +754,23 @@ pkg/streamq/
   limit.go          the delivery limit: the count from XPENDING, dead-lettered past it
   schedule.go       defer: ZADD to the due set, and one Lua script that moves what's due to the stream
   deadletter.go     XADD to the dead-letter stream with the kind, error, delivery count and source;
-                    trimmed with MAXLEN
+                    trimmed with MAXLEN; then Config.DeadLettered, if set, so the service marks
+                    the record before the message is acknowledged (JOB-3)
   replay.go         put one dead letter back on its stream, then delete it
 internal/adapters/redis/
   keys.go           every key, including each queue's ready, due and dlq names
   queue.go          builds the engine on the shared client, implements jobs.Enqueuer, and registers
-                    each kind's stream, timeout and delivery limit, with each stream's bound
+                    each kind's stream, timeout and delivery limit, with each stream's bound; passes
+                    the dead-lettered callback it's given, typed with jobs.Job, to the engine
   queue_outcome.go  the one mapping from errkinds to the engine's outcomes (JOB-2)
 internal/workers/<name>/              one handler per kind (JOB-1)
-internal/core/<capability>/sweep.go   the sweep (JOB-3)
-cmd/services/worker/wire.go           registers each handler in the dispatch table, and runs the consumer as a component (CON-2)
-cmd/tools/replay/                     lists and replays dead letters
+internal/core/<capability>/sweep.go   the sweep, and the use cases that mark a record dead-lettered,
+                                      and due again for a replay (JOB-3)
+cmd/services/worker/wire.go           registers each handler in the dispatch table, binds the queue's
+                                      dead-lettered callback to core (JOB-3), and runs the consumer
+                                      as a component (CON-2)
+cmd/tools/replay/                     lists dead letters, and replays them: for each, core marks its
+                                      record due again, then the engine puts it back (JOB-3)
 ```
 
 **Do:**

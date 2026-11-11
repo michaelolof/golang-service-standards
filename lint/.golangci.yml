@@ -411,8 +411,8 @@ linters:
       - {path: '^pkg/', linters: [wrapcheck, wrapgaps]}
       # ERR-7: the error body's __sid field is a fixed name, not snake_case.
       - {linters: [tagliatelle], text: "got '__sid'"}
-      # ABS-1: ports/ and foundation/ hold interfaces other packages use, so nothing in their own package does.
-      - {path: '^internal/(ports|foundation)/', linters: [iface], text: '^unused:'}
+      # ABS-1, JOB-1: ports/, foundation/ and jobs/ hold interfaces other packages use, so nothing in their own package does.
+      - {path: '^internal/(ports|foundation|jobs)/', linters: [iface], text: '^unused:'}
       # ABS-1, ABS-2: gofi's Deps has one accessor per dependency, returning interfaces (gofi DEP-1, DEP-2).
       - {path: '^internal/http/deps/', linters: [interfacebloat, ireturn]}
       # STY-4: header names are lowercase kebab-case (gofi TAG-2). tagliatelle can't tell a header struct apart, so any such name passes.

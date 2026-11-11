@@ -99,9 +99,10 @@ func implements(t *types.Named, i *types.Interface) bool {
 }
 
 // checkInterfaces reports an interface nothing implements, a port nothing
-// outside internal/ports uses, a foundation interface nothing uses, and two
-// interfaces with the same methods (ABS-1). iface's unused check covers use
-// inside a consumer's package.
+// outside internal/ports uses, a job interface nothing outside internal/jobs
+// uses, a foundation interface nothing uses, and two interfaces with the same
+// methods (ABS-1, JOB-1). iface's unused check covers use inside a consumer's
+// package.
 func checkInterfaces(m *module) ([]problem, error) {
 	ifaces := m.interfaces()
 	implemented := m.implemented(ifaces)
@@ -117,6 +118,8 @@ func checkInterfaces(m *module) ([]problem, error) {
 		switch {
 		case within(i.rel, "internal/ports") && !usedOutside[i.obj]:
 			problems = append(problems, m.at(i.pkg.Fset, i.obj.Pos(), "nothing outside internal/ports uses %s: a port is shared by several packages, so move it to its one consumer or delete it (ABS-1)", i.obj.Name()))
+		case within(i.rel, "internal/jobs") && !usedOutside[i.obj]:
+			problems = append(problems, m.at(i.pkg.Fset, i.obj.Pos(), "nothing outside internal/jobs uses %s: jobs holds the contract other packages share, so delete it until one does (ABS-1, JOB-1)", i.obj.Name()))
 		case within(i.rel, "internal/foundation") && !used[i.obj]:
 			problems = append(problems, m.at(i.pkg.Fset, i.obj.Pos(), "nothing uses %s: delete it until something does (ABS-1)", i.obj.Name()))
 		}
@@ -203,8 +206,8 @@ func (m *module) uses() (used, outside map[types.Object]bool) {
 }
 
 // duplicates reports each interface whose method set another package's
-// interface already has. Ports and foundation come first, so the copy reported
-// is the one outside the shared home.
+// interface already has. Ports, foundation and jobs come first, so the copy
+// reported is the one outside the shared home.
 func duplicates(m *module, ifaces []iface) []problem {
 	home := func(i iface) int {
 		switch {
@@ -212,8 +215,10 @@ func duplicates(m *module, ifaces []iface) []problem {
 			return 0
 		case within(i.rel, "internal/foundation"):
 			return 1
-		default:
+		case within(i.rel, "internal/jobs"):
 			return 2
+		default:
+			return 3
 		}
 	}
 
