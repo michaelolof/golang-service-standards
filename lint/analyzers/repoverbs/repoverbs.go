@@ -11,7 +11,6 @@ package repoverbs
 
 import (
 	"strings"
-	"unicode"
 
 	"github.com/michaelolof/golang-service-standards/lint/analyzers/internal/repo"
 	"github.com/michaelolof/golang-service-standards/lint/analyzers/internal/where"
@@ -44,8 +43,8 @@ func run(pass *analysis.Pass) (any, error) {
 	for _, method := range repo.Methods(named) {
 		name := method.Name()
 
-		if instead, ok := banned[firstWord(name)]; ok {
-			pass.Reportf(method.Pos(), "%s isn't a repository verb: use %s (DATA-3)", firstWord(name), instead)
+		if instead, ok := banned[repo.Verb(name)]; ok {
+			pass.Reportf(method.Pos(), "%s isn't a repository verb: use %s (DATA-3)", repo.Verb(name), instead)
 		}
 
 		if noun := repeats(name, pkg.Name); noun != "" {
@@ -54,17 +53,6 @@ func run(pass *analysis.Pass) (any, error) {
 	}
 
 	return nil, nil
-}
-
-// firstWord returns the leading word of a MixedCaps name: Get in GetByID.
-func firstWord(name string) string {
-	for i, r := range name {
-		if i > 0 && unicode.IsUpper(r) {
-			return name[:i]
-		}
-	}
-
-	return name
 }
 
 // repeats returns the form of the package name that name contains, or "": the

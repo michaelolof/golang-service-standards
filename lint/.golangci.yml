@@ -78,6 +78,7 @@ linters:
     - goroutines
     - repos
     - repoverbs
+    - txshape
     - constquery
     - comments
     - metricnames
@@ -254,6 +255,10 @@ linters:
       repoverbs:
         type: module
         description: 'Repository methods use the standard verbs and do not repeat the package name (DATA-3)'
+        original-url: ./analyzers
+      txshape:
+        type: module
+        description: 'A transaction core opens holds one business write and its boundary writes; boundary ports join it and never open one (DATA-4)'
         original-url: ./analyzers
       constquery:
         type: module

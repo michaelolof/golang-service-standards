@@ -610,6 +610,8 @@ The asynq, Redis-stream and Kafka adapters each have the same function, returnin
    - **CockroachDB:** the same statement or transaction. That means `EnqueueTx` when the queue lives in the same database, otherwise an outbox row.
    - **MongoDB:** the same document (an embedded `dispatch` sub-document), or a session transaction inside the repository.
    - **ScyllaDB:** an LWT batch within one partition.
+
+   `EnqueueTx` is a boundary write under DATA-4, so it may join the use-case statement's transaction. The port that does it, `jobs.Enqueuer`, then embeds `txboundary.Port`.
 2. **Enqueueing after the commit is a hint, not the record.** If the enqueue fails, log it and move on.
 3. **A sweep re-drives every intent that is recorded but not done**, except work whose job was dead-lettered (rule 6).
    - It's a core use case. It lists due intents from the record store through a repository, and calls `jobs.Enqueuer` for each one, with the job's dedupe key. A periodic job or a `Run(ctx)` component runs it (JOB-4).

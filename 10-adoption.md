@@ -235,6 +235,27 @@ This release replaces each project's own architecture test with checks the stand
 
 Why everything is on at once: a check that only warns is a check nobody acts on, and ADO-6 already asks an existing project to fix everything before it relies on the standard. The release notes list what the checks found in three codebases, so a team can size the work before starting.
 
+### Upgrading to the release with `txshape`
+
+This release tightens DATA-4. A change to several rows is one statement by default, and core may open a transaction only for boundary writes beside one use-case call. The new `txshape` analyzer checks it, and like every check it's on from the release.
+
+In the upgrade PR, run `task check`, and handle each `txshape` finding in one of these ways:
+1. **Write the use-case statement.** Fold the extra writes, the outbox event and the guard into one repository method, so the transaction isn't needed, or holds only boundary writes.
+2. **Mark the port as a boundary**, if it passes DATA-4's three tests: shared, owned and atomic. Add `internal/foundation/txboundary` with its one `Port` type, as DATA-4 shows, and embed it in the port. A port that isn't one of DATA-4's three boundaries is also recorded under `## This project's own rules` in `AGENTS.md`, with the tests answered.
+3. **Defer it.** Record it as a task-list item (COL-15), with its justification and impact in the form COL-16 gives. Then either stay on the old version until the tasks are done, as with the structural checks above, or, with the engineer's agreement, put `//nolint:txshape // <task ID>` on the line (COL-7) and remove it when the task is done.
+
+Mark the ports first. In a project that has just upgraded, nothing embeds `txboundary.Port` yet, so every job enqueue and audit write is reported. The ones that pass the three tests drop out once their port is marked, and what's left is the real work.
+
+What `txshape` found when it was run on three codebases before release:
+
+| Codebase | Transactions core opens | Findings | What they were |
+|---|---|---|---|
+| A CockroachDB service | 63 | 86, and every transaction had at least one | <ul><li>36 audit writes made through a domain method that calls the writer, so `txshape` can't see them. They go through the port directly, and the port is marked.</li><li>27 outbox events: 20 through a shared event port, and 7 through the events repository as a second business write. They belong in the use-case statement.</li><li>8 job enqueues to a queue in the same database. The port passes the three tests, so it's marked.</li><li>12 more second business writes, to operation rows, a checkpoint and a tenant's config: the use case's own rows, which belong in its statement.</li><li>3 reads before a write. Two of them read the row's old state for the audit record. The update can return it instead, because a CTE's `SELECT` part sees the row as it was before the statement (tested on PostgreSQL 17 and CockroachDB v26.3.2).</li></ul> |
+| A MongoDB service | 3 | 5 | <ul><li>A generic wrapper in a command-line tool.</li><li>2 second business writes, to two collections. On MongoDB that's a session transaction inside one repository method.</li><li>2 calls to shared ports: an access-audit writer, which can be marked if it passes the three tests, and a notification outbox, which can't.</li></ul> |
+| A ScyllaDB service | 0 | 0 | It has no transactions to check. |
+
+golangci-lint shows one finding per line. A function of the same package that two transactions call is reported once, for the first of them, so the first codebase had 93 findings with that limit off (`--uniq-by-line=false`). Fixing the function fixes both.
+
 ## What's built and what isn't
 
 | Part | Status |
@@ -244,5 +265,5 @@ Why everything is on at once: a check that only warns is a check nobody acts on,
 | `task stamps` and `task stamps:check` | Done, and tested from `.standards/` on a clone of one project, and from the standard on two more |
 | Templates (`AGENTS.md`, `Taskfile.yml`, `claude-settings.json`), hooks, `standards:check` | Done, and tested |
 | The standard's first version tag | Done: `v0.1.0` |
-| Structural checks: the analyzers in `lint/analyzers`, including `constquery` and `repoverbs`, and `tools/archcheck` (TEST-13) | Done, each with fixtures, and run on three codebases before release. A project keeps no `internal/architecture` and no `arch` task. |
+| Structural checks: the analyzers in `lint/analyzers`, including `constquery`, `repoverbs` and `txshape`, and `tools/archcheck` (TEST-13) | Done, each with fixtures, and run on three codebases before release. A project keeps no `internal/architecture` and no `arch` task. |
 | Shared test helpers (`testharness`, `apitest`, `pagination.AssertStablePaging`, `testutils.AssertConcurrentUpdateConflicts`, the migrate-twice test, conformance suites) | To build. A project writes its own until then, from the descriptions in [07](07-testing.md) and [06](06-persistence.md). |

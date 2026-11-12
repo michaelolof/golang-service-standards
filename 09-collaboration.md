@@ -24,14 +24,14 @@ It draws on three sources:
 | COL-6 | Implement in small steps, each ending green. Change only what the task needs. |
 | COL-7 | Refine against the standard with tests green, then run `task check`. |
 | COL-8 | `completed` means fully implemented, tested, verified when possible, and meeting the requirement. The agent marks it without asking, and reports completed or not completed, with the evidence. Never "should work". |
-| COL-9 | When a workstream's last task is `completed`, the agent writes a completion document straight away, without being asked: a standalone HTML file in `completion/`, checked in a browser, covering everything it did, why, the impact, code sources, many scenarios and any database change, with syntax highlighting on every code block. A small change with no plan or task list entry gets one too. It makes the case for the work honestly, and it must not lie. |
+| COL-9 | When a workstream's last task is `completed`, the agent writes a completion document straight away, without being asked: a standalone HTML file in `completion/`, checked in a browser, covering everything it did, why, the impact, code sources, many scenarios, any database change and every transaction used instead of one statement, with syntax highlighting on every code block. A small change with no plan or task list entry gets one too. It makes the case for the work honestly, and it must not lie. |
 | COL-10 | Only the engineer marks a task or a workstream `done`, by an explicit instruction after reviewing it. Review covers four concerns: works, solves the real problem, fits, reads well. |
 | COL-11 | Stop rules: two failed attempts, growing scope, a request that breaks the standard, a scope status that doesn't match what the agent finds, or pressure to skip a step. |
 | COL-12 | Autonomy is granted per task type and earned through measured results. |
 | COL-13 | Every repeated correction becomes a rule, a check, or a canonical example. |
 | COL-14 | Everything written for a person uses clear, approachable language, with a practical example and a code source. |
 | COL-15 | Each project keeps one living `tasklist.md`: a tracker table grouped into phases that each deliver something useful, linked to a section per task. A task can only depend on tasks above it. A dependency in another workstream that isn't `done` yet is a warning, not a blocker. Each scope is marked `greenfield`, `existing` or `unconfirmed`. The engineer sets it when the task list or a task is written, so the agent asks and never assumes, and nothing is planned or changed while it's `unconfirmed`. |
-| COL-16 | Each task being worked on is detailed in an implementation plan in `implementation/`, which the engineer approves before work starts. All the work one plan covers is one workstream. |
+| COL-16 | Each task being worked on is detailed in an implementation plan in `implementation/`, which the engineer approves before work starts. A plan that adds or changes a write lists each transaction it will use instead of one statement, with its justification and impact. All the work one plan covers is one workstream. |
 | COL-17 | Every implementation plan has a table of all the sub-tasks needed to finish it end to end, in the task list's format, with temporary IDs that exist only in that plan. |
 | COL-18 | Only the engineer deletes an implementation plan or completion document. A finished plan stays in the folder until the engineer explicitly says to delete it. |
 | COL-19 | A workstream goes to the engineer whole, implemented end to end. Never ask for `done` on part of it unless the engineer asked for that. If an item must be `done` before another in the same workstream or phase, ask first. |
@@ -183,6 +183,7 @@ It covers everything that was implemented, not just the highlights. It's unambig
 | Warnings | Anything the engineer should know before deciding. Always check for a dependency in another workstream that isn't `done` yet (COL-15): name the task, and say what would need redoing if its review changes it. Include a security check that couldn't run, or a finding that's still open (SEC-27). Write "None" if there are none. |
 | What was done | Everything that changed, with links to the code. |
 | Database | Everything that changed in what's stored, with the schema and the explanation. See below. Write "None" if nothing stored changed. |
+| Transactions | Every transaction used instead of one statement in the code the workstream touched, and every one it removed. See below. Write "None" if there are none. |
 | What led to it | The problem, what was found in the code, and how that led to this implementation. |
 | Justification | Each decision, the options not chosen and why, and anything that differs from the plan. |
 | Impact | What changes, and for whom: callers, data, other code, operations. What stays the same. Breaking changes, risks and known limits. |
@@ -204,6 +205,12 @@ It covers everything that was implemented, not just the highlights. It's unambig
 - **Reads and writes:** which actions read and write the changed tables, and any request that now does more database work.
 - **Existing data:** what happens to it, what a deploy must do, what breaks if that step is skipped, and whether there's a way back. On a `greenfield` scope (COL-15), just say there's none to account for.
 - **Other stores:** the same for anything else that keeps data, such as a cache's keys and how long they last.
+
+**Transactions.** Every transaction used instead of one statement must be visible to the engineer (DATA-4). The section lists:
+- every transaction the workstream added, changed or left in place in the code it touched, with the same three fields as the plan: the use case, the justification and the impact (COL-16);
+- every transaction it removed by moving to one statement.
+
+If there are none, the section says so.
 
 **The format.** A completion document is HTML because HTML presents and explains work better than Markdown: side-by-side before and after, diagrams, colour for what passed and what didn't, and interaction where it helps. That's the only reason, so use what helps the reader and nothing more.
 - It stands alone, like a Markdown file: one `.html` file with its styles and any scripts inside it. It needs no build step, shares no files with other documents, and loads nothing from the internet.
@@ -315,6 +322,7 @@ for this provider; got 2. Create one wallet per asset"</span></pre></div>
 - a page that's broken, or that hides bad news in a collapsed section;
 - a code block with no syntax highlighting;
 - a change to stored data that the Database section doesn't cover;
+- a transaction in the touched code that the Transactions section doesn't list;
 - too few scenarios to decide from.
 
 ## COL-10 · Review, and moving work to `done`
@@ -741,10 +749,36 @@ Plans are kept up to date until the engineer marks their work `done`. After that
 | What changes and what doesn't | The behaviour that changes, and what callers can rely on staying the same. |
 | Keeping what exists working | Only for a scope marked `existing` (COL-15): how data moves, what callers must change, the order of the deploy, and the way back. |
 | Decisions | Each choice: the options, the one taken and why. Open ones are the engineer's to answer (COL-3). |
+| Transactions | Only for a plan that adds or changes a write: each transaction it will use instead of one statement, with the use case, the justification and the impact. See below. |
 | Sub-task sections | One section per row of the table, in the same order (COL-17). |
 | Risks | What could go wrong, and what we'd do about it. |
 | Out of scope | What this plan won't do, and where that work goes instead. |
 | Completion criteria | Each sub-task's "Completed when" line, tied back to the task's acceptance criteria. Link to the criteria rather than copying them. |
+
+### Transactions
+
+Every transaction used instead of one statement must be visible to the engineer before work starts (DATA-4). A plan that adds or changes a write lists each one. Each entry gives:
+- **the use case**;
+- **the justification:** which database limit, or which boundary writes, and how each one passes DATA-4's three tests: shared, owned and atomic;
+- **the impact:**
+  - how many round trips each call makes;
+  - how busy the path is;
+  - the risk of collisions and retries;
+  - what one statement would save.
+
+A transaction with no entry means the plan isn't ready for approval. If the plan uses none, the section says so.
+
+Here's an entry. It's invented.
+
+**`ordering.Place`**
+- **Justification:** boundary writes beside `orders.Place`, which writes the order, its items and its event in one statement.
+  - `audit.Record`: one audit writer serves every use case (shared), and it owns the actor fields and what's redacted (owned). An order placed without its record is an unaudited change (atomic).
+  - `jobs.Enqueuer`: the queue lives in the same database, and its library owns the job table (shared, owned). An order without its fulfilment job is lost work (atomic).
+- **Impact:**
+  - 5 round trips per call: begin, the statement, the audit insert, the job insert and the commit.
+  - The busiest write path, at about 40 calls a second at peak.
+  - The order and its items are new rows, so other writes rarely collide with them. Every use case writes to the job table, so a serialization failure there retries the whole closure.
+  - One statement would save 4 round trips, but it would copy the audit writer's rules and the queue's columns into the order query.
 
 ### Keeping it up to date
 
@@ -767,6 +801,7 @@ A plan that covers several tasks is finished when the engineer has marked the la
 - a task marked `inprogress` with no linked plan;
 - a plan for a scope that's still `unconfirmed`;
 - a plan whose tasks are all `done`, but whose header doesn't say so;
+- a plan that adds or changes a write, with a transaction it doesn't list, or an entry without its justification or impact;
 - a plan that fails COL-14's three tests.
 
 ## COL-17 · The plan's sub-task table

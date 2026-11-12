@@ -23,7 +23,7 @@ This document builds on:
 | DATA-1 | One package per aggregate, with a fixed set of files: `repo.go`, `row.go`, and one file per use case. | `repos`, review |
 | DATA-2 | Repository methods take and return domain types. A database schema type isn't a domain type: it's private to the repository, and its fields may use domain types. One column list and one scan function per table, in `row.go`. | depguard, `repos`, review |
 | DATA-3 | Method verbs come from a closed set, and names don't repeat the package name. | `repoverbs` |
-| DATA-4 | A change to several rows is one repository method named for the use case. Prefer one atomic statement (a CTE); otherwise the repository owns the transaction. Core never holds database semantics. | forbidigo, review |
+| DATA-4 | A change to several rows is one repository method named for the use case, and one statement by default. A transaction is allowed only for a database limit (inside the repository), or for boundary writes (shared, owned, atomic) beside exactly one use-case call. Core never holds database semantics. | forbidigo, `txshape`, review |
 | DATA-5 | Every query is a constant, declared inside the method that runs it. It moves to package level only when several methods share it. | `constquery`, gosec, review |
 | DATA-6 | Time comes from the clock. SQL `now()` is never used. | `constquery` |
 | DATA-7 | Optimistic concurrency uses a version column with an atomic compare-and-set. A CAS is never read-then-write. | project test (concurrent update), review |
@@ -185,21 +185,203 @@ return doc.toDomain(), nil
 ## DATA-4 · Atomic work is one use-case-shaped repository method
 
 **Rule.**
-- When a use case changes several rows together (a transfer, its operation, its outbox event), core calls **one repository method named for the use case**: `CancelInitiated`, `Settle`, `CreateDetected`. That method makes the change atomic.
-- Inside that method, use the first of these that works:
-  1. **One statement.** A CTE in CockroachDB, a lightweight transaction or logged batch in ScyllaDB, or a single-document update in MongoDB. The guard (status, version, "no provider reference yet") goes in the `WHERE` clause or filter, so nothing can change between the check and the write.
-  2. **A transaction the repository opens and closes**, when the database can't do it in one statement. For example, CockroachDB rejects two mutations of the same table in one statement. The transaction never leaves the method.
-  3. **A transaction around several repository calls, opened by core.** Use this only when the change spans repositories that can't sensibly be one method. Write the reason at the call site. Core declares a one-method interface, `Within(ctx, fn func(ctx context.Context) error) error`. An adapter implements it and puts the transaction on the ctx it passes to `fn` (CTX-1), so the repositories pick it up and core still holds no handle.
+- When a use case changes several rows together (an order, its items, its outbox event), core calls **one repository method named for the use case**: `Place`, `CancelInitiated`, `Settle`. That method makes the change atomic.
+- **One statement is the default**, on every database that can do it. On PostgreSQL and CockroachDB, that's a data-modifying CTE: a `WITH` query whose parts insert, update or delete. The guards (status, version, "no provider reference yet") go in its `WHERE` clause, so nothing can change between the check and the write. The table below gives the form on each database.
+- **A transaction is allowed for only two reasons:**
+  1. **A database limit.** The database can't make the change in one statement. For example, CockroachDB rejects two changes to the same table in one statement, unless both are plain inserts (tested on v26.3.2). MySQL and SQLite have no data-modifying CTE, so they can't insert into one table and update another in one statement (tested on SQLite 3.54). The repository opens and closes the transaction inside the use-case method, and the transaction never leaves the method.
+  2. **Boundary writes.** A boundary write is a record that a shared component writes for many use cases, and that must commit together with the business change. Core may open a transaction that holds the one use-case call and its boundary writes, and nothing else. The tests, the list and the shape are below.
 - Core never sees SQL, connections, transaction handles or rollback sentinels. It asks for a business change and gets back the result or an error kind.
-- Work outside the database (HTTP calls, cache invalidation, notifications) happens after the method returns.
+- Work outside the database never goes in a transaction (below).
+- Every transaction used instead of one statement is listed, with its justification and impact, in the implementation plan before work starts and in the completion document after (COL-16, COL-9).
+
+### When a write is a boundary write
+
+A write may sit beside the use-case statement in one transaction, instead of inside it, only if all three of these are true:
+1. **Shared.** One component writes it for many use cases.
+2. **Owned.** That component owns the record's shape and rules: its table, dedupe keys, redaction or schedule. Use-case SQL must not write that table directly. Copying the component's insert into every query would tie each use case to the component's internals.
+3. **Atomic.** It must commit or roll back with the business change. If it doesn't need to, it doesn't belong in a transaction at all. It runs after the commit, or through an intent and a sweep (JOB-3).
+
+If any of the three fails, the write goes inside the use-case statement.
+
+**What makes something a boundary.** Its record follows rules that belong to another component, not to the use case.
+- If every use case wrote that record in its own statement, those rules would be copied into every query.
+- When the owner changes its rules, every copy has to change too. One missed copy is a silent bug.
+- The transaction is the price of keeping one owner. It's worth paying only when the record must commit together with the business change.
+
+### The recognised boundaries
+
+This is a closed list.
+
+1. **Job enqueue**, into a queue stored in the same database (`EnqueueTx`, JOB-3).
+   - **Owner:** the queue library.
+   - **Why it can't go in the statement:** the queue's table is the library's private storage.
+     - The table layout, dedupe keys, scheduling and retry columns, and wake-up signal belong to the library.
+     - They change between library versions.
+     - A use case that inserts straight into the table skips the library's dedupe and wake-up, and breaks on the next upgrade.
+   - **Why it must commit with the business change:**
+     - If the state change commits and the job doesn't, the follow-up work is lost.
+     - If the job commits and the state change doesn't, a worker acts on a change that never happened.
+     - JOB-3 already requires this.
+   - **When it's not a boundary:** a queue in another store, such as Redis, can't join the transaction. The use-case statement records the intent, and the enqueue after the commit is only a hint (JOB-3).
+2. **Audit record**, written by a shared audit writer.
+   - **Owner:** the audit component.
+   - **Why it can't go in the statement:** the writer builds every record the same way.
+     - It records who acted and from which request.
+     - It decides what to redact.
+     - Sometimes it adds a hash that links each record to the one before.
+
+     These are security rules. If each use-case query copies them, one query will eventually record the wrong actor, or store a field the writer would have redacted.
+   - **Why it must commit with the business change:**
+     - An action without its audit record is an unaudited change.
+     - An audit record without its action is a false record.
+   - **When it's not a boundary:** if there's no shared writer, and audit rows are a plain table the project fills directly, there are no rules to protect. The row goes in the statement.
+3. **Idempotency record**, written by a shared idempotency store that every write endpoint uses. The record holds the key, the request fingerprint and the stored response.
+   - **Owner:** that store.
+   - **Why it can't go in the statement:** the store decides, the same way for every endpoint:
+     - how keys are scoped;
+     - how a fingerprint is computed;
+     - how long records live;
+     - what a retry with a different body gets back.
+
+     Copied into each query, that behaviour drifts from endpoint to endpoint.
+   - **Why it must commit with the business change:**
+     - If the change commits and the record doesn't, a client's retry applies the change twice.
+     - If the record commits and the change doesn't, the retry gets back a success for something that never happened.
+   - **When it's not a boundary:** an idempotency key kept on the business row itself, as DATA-8 describes, is part of the use-case statement.
+
+Nothing else is a boundary. A project that believes it has another one records it under `## This project's own rules` in its `AGENTS.md`, as `Exception to DATA-4:`, with the three tests answered (ADO-2). The standard then considers adding it to this list in a later version.
+
+### What isn't a boundary
+
+These go inside the use-case statement:
+- **The use case's outbox event.**
+  - Its content comes from the rows the statement writes.
+  - Inserted from the CTE's `RETURNING`, the event exists only if the guarded write happened.
+  - Composing it in a transaction is what leads to sentinel errors whose only job is to roll back an outbox insert. The Why below cites one.
+- **Rows that belong to the same use case or aggregate:** operation or attempt rows, state-history rows, items, balances, and counters on the use case's own data. No other component owns them, so there are no outside rules to keep in one place.
+- **A project-owned repository method that several use cases happen to call**, such as "record usage" or "touch last seen".
+  - Reuse alone doesn't make a boundary. Only a separate owner does.
+  - Fold the SQL into each use-case statement. If several methods need the same fragment, share it as a constant inside the repository package (DATA-5).
+
+Some work isn't a database write at all: cache writes or invalidation, HTTP calls, emails, notifications, and publishing to a broker. It never goes in a transaction:
+- a database transaction can't make it atomic;
+- a retry of the transaction would repeat it.
+
+It runs after the commit, or through an intent and a sweep (JOB-3).
+
+### What a boundary component looks like
+
+- **Its port** is a small interface that embeds `txboundary.Port` (below). The standard's own `jobs.Enqueuer` is one, when the queue lives in the same database (JOB-1).
+- **One call writes one record**, or one batch for one use case.
+- **It joins the transaction on the ctx.**
+  - It never opens, commits or rolls back a transaction.
+  - It never takes a callback.
+- **It reads nothing that decides the business outcome.** Its own dedupe on its own key, such as `ON CONFLICT` on the idempotency key, is fine.
+- **Called without a transaction, it writes on its own.** That's how JOB-3's after-commit hint works.
+
+**The marker.** A port is a boundary port when its interface embeds `txboundary.Port`. That's an empty interface, declared once in each project, in `internal/foundation/txboundary`. It adds no methods, so implementations and fakes don't change:
+
+```go
+// internal/foundation/txboundary/txboundary.go
+
+// Package txboundary marks the ports whose writes may join a use case's
+// transaction (DATA-4).
+package txboundary
+
+// Port marks a boundary port. It adds no methods. Only the ports for DATA-4's
+// recognised boundaries embed it.
+type Port any
+```
+
+```go
+// internal/ports/audit.go
+
+// AuditWriter records one audit entry. It joins the transaction on ctx, and
+// writes on its own when there's none.
+type AuditWriter interface {
+	txboundary.Port
+	Record(ctx context.Context, entry domain.AuditEntry) error
+}
+```
+
+Both pass the standard's lint config (tested). The marker is a type, not a comment, as required fields are marked with a tag and not a comment (STY-3). A misspelt marker doesn't compile, a rename carries it along, and it shows wherever the interface does.
+
+### The transaction's shape
+
+A transaction that core opens holds exactly one business write plus boundary writes, and nothing else. The business write is one call to a use-case repository method, ideally one statement.
+- Two business writes in one transaction means a use-case method is missing. Write the method.
+- There are no reads inside the transaction that decide what to write. The guard goes in the statement's `WHERE` clause (DATA-7).
+- There's no generic helper that takes any callback and adds a side record to it, such as `WriteWithEvent(ctx, event, fn)`. Helpers like that are how many small writes end up in one transaction. A boundary component joins the caller's transaction, and never opens one.
+- A transaction with no boundary write has no reason to exist. Call the use-case method on its own.
+
+How the transaction runs:
+- Core opens it through a one-method interface, `Within(ctx, fn func(ctx context.Context) error) error`. An adapter implements it and puts the transaction on the ctx it passes to `fn` (CTX-1). The repository and the boundary components pick it up there, so core still holds no handle.
+- It retries serialization failures, so `fn` may run more than once.
+- The closure does no work outside the database.
 
 **Why.**
-- One statement means one round trip and no gap between the check and the write. CockroachDB also retries implicit single-statement transactions on the server.
 - Database semantics stay in the repository. Core reads as business steps (STY-9).
-- Prefer use-case-shaped CTE-backed repository methods over composing many small repository writes in a service transaction.
-- Where a service composes writes in a transaction instead, business code ends up steering the database:
+- **Teams compose writes for reuse.** Shared code writes the side records: an audit component, the job queue, an outbox helper. A transaction lets every use case call its normal repository method, then call those shared writers, and have everything commit together. Nobody writes new SQL per use case. That reason is valid for some side records and not for others. The three tests say which.
+- **Composing writes has a cost:**
+  - Each statement in a transaction is one more round trip to the database.
+  - On distributed SQL, each statement also keeps the transaction open longer, so other writes collide with it more often.
+  - A retry runs the whole closure again.
+
+  A single statement avoids all of that. It's one round trip, nothing can change between the check and the write, and CockroachDB retries it on the server by itself. Composing writes costs the most on busy paths, and nobody notices it anywhere else. That's why "prefer one statement" wasn't enough.
+- **"Prefer" didn't change what teams wrote.** One service that adopted the standard had 69 transactions that wrapped several repository calls.
+  - 67 of them were there only to attach a side record to the business write: an audit record, an outbox event or a queued job. Only 2 were plain multi-row writes.
+  - After a full adoption pass, 63 core-opened transactions remained. One of them had its reason written at the call site.
+  - About 15 wrote a single business row plus its side records. That's exactly the case one CTE covers.
+  - Its busiest paths had been rewritten as CTEs, but by a separate performance review, not because the standard required it.
+- Where a service composes writes in a transaction, business code ends up steering the database:
   - A use case returns a sentinel error, `errInflowAlreadyDetected`, from inside a `WriteWithOutbox` transaction only to roll back the outbox insert when the inflow already exists.
   - A `withTxn` helper ended up with six copies, two of them in HTTP handlers.
+
+**Do.** An order, its items and its outbox event in one statement. The items come in as one array per column, and the event's content comes from the row the statement inserts:
+
+```go
+// internal/repository/orders/place.go
+
+// Place creates an order with its items and its order.placed event.
+func (r *Repo) Place(ctx context.Context, args domain.PlaceOrderArgs) (domain.Order, error) {
+	const q = `
+		WITH placed AS (
+			INSERT INTO orders (id, tenant_id, customer_id, status, total_minor, currency, placed_at)
+			VALUES (@id, @tenant_id, @customer_id, 'PLACED', @total_minor, @currency, @placed_at)
+			RETURNING ` + orderColumns + `
+		),
+		items AS (
+			INSERT INTO order_items (order_id, line, sku, quantity, price_minor)
+			SELECT placed.id, item.line, item.sku, item.quantity, item.price_minor
+			FROM placed, unnest(@lines::INT8[], @skus::TEXT[], @quantities::INT8[], @prices::INT8[])
+				AS item (line, sku, quantity, price_minor)
+			RETURNING line
+		),
+		event AS (
+			INSERT INTO outbox (id, tenant_id, aggregate_id, kind, payload, occurred_at)
+			SELECT @event_id, placed.tenant_id, placed.id, 'order.placed',
+				jsonb_build_object('order_id', placed.id, 'total_minor', placed.total_minor, 'currency', placed.currency),
+				placed.placed_at
+			FROM placed
+			RETURNING id
+		)
+		SELECT ` + orderColumns + ` FROM placed`
+
+	rows, err := r.db.Query(ctx, q, placeArgs(args)) // pgx.NamedArgs, with one array per item column
+	if err != nil {
+		return domain.Order{}, errx.Wrap(1794475867238, err)
+	}
+
+	order, err := pgx.CollectOneRow(rows, scanOrder)
+	if err != nil {
+		return domain.Order{}, errx.Wrap(1794475867767, err)
+	}
+
+	return order, nil
+}
+```
+
+The statement inserted the order, both items and the event on PostgreSQL 17 and on CockroachDB v26.3.2 (tested, with literals in place of the parameters). Every part of the CTE has a `RETURNING`, even when nothing reads it. CockroachDB rejects a part that returns nothing, with `WITH clause "items" does not return any columns`, and PostgreSQL accepts either (tested on both).
 
 **Do.** Cancel the transfer and abandon its operation in one statement. The guards are part of the `WHERE` clause:
 
@@ -220,6 +402,7 @@ func (r *Repo) CancelInitiated(ctx context.Context, args domain.CancelInitiatedT
 			WHERE org_id = @org_id AND tenant_id = @tenant_id AND id = @operation_id
 			  AND state IN ('WAITING', 'RUNNING', 'RETRYING')
 			  AND transfer_id IN (SELECT id FROM cancelled)
+			RETURNING id
 		)
 		SELECT ` + transferColumns + ` FROM cancelled`
 	// ...
@@ -238,6 +421,7 @@ WITH inserted AS (
 event AS (
 	INSERT INTO outbox (...)
 	SELECT ... FROM inserted
+	RETURNING id
 )
 SELECT <inflowColumns> FROM inserted
 UNION ALL
@@ -246,15 +430,140 @@ WHERE org_id = @org_id AND provider_name = @provider_name AND provider_unique_re
   AND NOT EXISTS (SELECT 1 FROM inserted)
 ```
 
+**Do.** A transaction that core opens, for boundary writes only. The order, its items and its event are one statement, `orders.Place`. The audit record and the fulfilment job belong to shared components, so they sit beside it:
+
+```go
+// internal/core/ordering/place.go
+
+// Place places an order, records who placed it, and queues its fulfilment.
+func (s *Service) Place(ctx context.Context, args domain.PlaceOrderArgs) (domain.Order, error) {
+	job, err := jobs.New(jobs.KindOrderFulfil, args.TenantID, "order.fulfil:"+args.ID.String(),
+		jobs.OrderFulfil{TenantID: args.TenantID, OrderID: args.ID})
+	if err != nil {
+		return domain.Order{}, errx.Wrap(1794475865984, err)
+	}
+
+	var placed domain.Order
+
+	err = s.tx.Within(ctx, func(ctx context.Context) error {
+		var err error
+
+		placed, err = s.orders.Place(ctx, args)
+		if err != nil {
+			return errx.Wrap(1794475868712, err)
+		}
+
+		if err := s.audit.Record(ctx, domain.AuditEntry{Actor: args.PlacedBy, Action: "order.placed", Target: placed.ID.String()}); err != nil {
+			return errx.Wrap(1794475870618, err)
+		}
+
+		if err := s.jobs.Enqueue(ctx, job); err != nil {
+			return errx.Wrap(1794475869509, err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return domain.Order{}, errx.Wrap(1794475868024, err)
+	}
+
+	return placed, nil
+}
+```
+
+- `ports.AuditWriter` and `jobs.Enqueuer` embed `txboundary.Port`, so `txshape` reports nothing here.
+- The job is built before the transaction, so the closure only writes.
+- With a same-database queue, the job's row is the intent JOB-3 asks for, and the queue adapter wakes a worker after the commit.
+
+**Don't.** Four repository calls composed in core. Only `audit.Record` is a boundary write:
+
+```go
+err = s.tx.Within(ctx, func(ctx context.Context) error {
+	if err := s.orders.Create(ctx, order); err != nil {
+		return errx.Wrap(1794475867482, err)
+	}
+
+	if err := s.items.CreateMany(ctx, order.ID, args.Items); err != nil {
+		return errx.Wrap(1794475866508, err)
+	}
+
+	if err := s.events.Create(ctx, domain.NewOrderPlaced(order)); err != nil {
+		return errx.Wrap(1794475871637, err)
+	}
+
+	if err := s.audit.Record(ctx, entry); err != nil {
+		return errx.Wrap(1794475869681, err)
+	}
+
+	return nil
+})
+```
+
+`txshape` reports `items.CreateMany`, a second business write, and `events.Create`, a port that isn't a boundary. The fix is the Do above: one `orders.Place` writes the order, its items and its event.
+
+**Don't.** A generic helper that adds a side record to any write. Any number of writes can go in `fn`, and nothing at the call site shows them:
+
+```go
+// WriteWithEvent runs fn and records event in the same transaction.
+func (s *Service) WriteWithEvent(ctx context.Context, event domain.Event, fn func(ctx context.Context) error) error {
+	err := s.tx.Within(ctx, func(ctx context.Context) error {
+		if err := fn(ctx); err != nil {
+			return errx.Wrap(1794475867618, err)
+		}
+
+		if err := s.events.Create(ctx, event); err != nil {
+			return errx.Wrap(1794475866259, err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return errx.Wrap(1794475866900, err)
+	}
+
+	return nil
+}
+```
+
+**Don't.** A read inside the closure, then a decision, then a write:
+
+```go
+err = s.tx.Within(ctx, func(ctx context.Context) error {
+	order, err := s.orders.Get(ctx, args.TenantID, args.ID)
+	if err != nil {
+		return errx.Wrap(1794475870314, err)
+	}
+
+	if order.Status != domain.OrderStatusPlaced {
+		return errx.NewKind(1794475869301, errkinds.ErrKindInvalidTransition, "only a placed order can be cancelled")
+	}
+
+	if err := s.orders.Cancel(ctx, args); err != nil {
+		return errx.Wrap(1794475865563, err)
+	}
+
+	if err := s.audit.Record(ctx, entry); err != nil {
+		return errx.Wrap(1794475868333, err)
+	}
+
+	return nil
+})
+```
+
+Another writer can change the order between the `Get` and the `Cancel`. Fixed, `orders.Cancel` is one statement with `AND status = 'PLACED'` in its `WHERE` clause, and no rows back is `invalid_transition`, as `CancelInitiated` above does.
+
 **Per database:**
 
-| Database | One statement | When one statement isn't enough |
-|---|---|---|
-| CockroachDB | CTE, guards in `WHERE`; `INSERT … ON CONFLICT DO NOTHING RETURNING` | `crdbstore.DB.WithinTx` inside the repository method; retries `40001` |
-| MongoDB | `FindOneAndUpdate` with the guard in the filter | A session transaction inside the repository method |
-| ScyllaDB | LWT (`UPDATE … IF status = ?`) for a guarded change to one partition; a logged batch for the same entity across several tables | No multi-partition transactions. Model the change as one guarded write plus a recovery scan (JOB-3). |
+| Database | One statement | When one statement isn't enough | How boundary writes join |
+|---|---|---|---|
+| PostgreSQL | CTE, guards in `WHERE`; `INSERT … ON CONFLICT DO NOTHING RETURNING` | `pgstore.DB.WithinTx` inside the repository method | the same transaction |
+| CockroachDB | CTE, guards in `WHERE`; `INSERT … ON CONFLICT DO NOTHING RETURNING`. Every part of the CTE has a `RETURNING` | `crdbstore.DB.WithinTx` inside the repository method; retries `40001` | the same transaction |
+| MongoDB | `FindOneAndUpdate` with the guard in the filter | A session transaction inside the repository method | the session transaction, or an embedded sub-document (JOB-3) |
+| ScyllaDB | LWT (`UPDATE … IF status = ?`) for a guarded change to one partition; a logged batch for the same entity across several tables | No multi-partition transactions. Model the change as one guarded write plus a recovery scan (JOB-3). | no multi-partition transactions, so boundary records go through an intent and a sweep (JOB-3) |
 
-**Transactions when a repository needs one** (option 2):
+A database that can't change several tables in one statement, such as MySQL or SQLite, uses the repository-owned transaction as its default.
+
+**Transactions when a repository needs one** (the database-limit exception):
 
 ```go
 // adapters/crdbstore/tx.go
@@ -269,7 +578,18 @@ func (db *DB) WithinTx(ctx context.Context, fn func(tx pgx.Tx) error) error {
 
 **Enforced by:**
 - forbidigo on `BeginTx`, `BeginTxFunc`, `StartSession` and `WithTransaction`, allowed only in `internal/repository/**` and `internal/adapters/*store/`;
-- review for option 3: the call site must say why one repository method can't do it.
+- the `txshape` analyzer, on every call to a method named `Within` that takes a `func(context.Context) error`, outside `internal/repository`. In the closure, and in the functions of the same package it calls, it reports:
+  - a second business write, or one inside a loop;
+  - a read: a call whose verb is `Get`, `Find`, `List` or `Count`, or a banned verb that reads (DATA-3);
+  - a call to a port in `ports`, `jobs` or `foundation` that doesn't embed `txboundary.Port`;
+  - the ctx given to anything else in the module that it can't see into, such as a domain method that calls a port;
+  - a transaction with no business write, or with no boundary write.
+
+  It also reports a function that takes a `func(context.Context) error` and runs it in `Within`, a boundary port method that takes a callback, and a call that opens a transaction inside a method that implements a boundary port;
+- review:
+  - a fourth boundary, which needs its three tests answered in `AGENTS.md`;
+  - what a boundary component reads;
+  - a call to an external system inside the closure. Through an interface core declares, it counts as a business write, because nothing tells it apart from a repository.
 
 ## DATA-5 · Queries are constants, declared where they run
 

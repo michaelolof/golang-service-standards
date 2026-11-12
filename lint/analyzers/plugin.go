@@ -24,6 +24,7 @@ import (
 	"github.com/michaelolof/golang-service-standards/lint/analyzers/repos"
 	"github.com/michaelolof/golang-service-standards/lint/analyzers/repoverbs"
 	"github.com/michaelolof/golang-service-standards/lint/analyzers/services"
+	"github.com/michaelolof/golang-service-standards/lint/analyzers/txshape"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -44,6 +45,7 @@ var All = []*analysis.Analyzer{
 	goroutines.Analyzer,
 	repos.Analyzer,
 	repoverbs.Analyzer,
+	txshape.Analyzer,
 	constquery.Analyzer,
 	comments.Analyzer,
 	metricnames.Analyzer,

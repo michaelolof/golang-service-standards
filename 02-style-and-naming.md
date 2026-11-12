@@ -938,6 +938,7 @@ Between 36% and 57% of these were in test files, mostly `paralleltest`, which ha
 | `go` statements only in `foundation/supervise` | CON-1, CON-2 | `goroutines` |
 | Repositories: one package per aggregate, `repo.go` and `row.go`, only `Repo` exported, no SDK types in its methods | DATA-1, DATA-2 | `repos` |
 | Repository verb allow/deny list | DATA-3 | `repoverbs` |
+| A transaction core opens holds one business write and its boundary writes; boundary ports join it and never open one | DATA-4 | `txshape` |
 | Queries are constant expressions; no SQL `now()`; named `ON CONFLICT` targets | DATA-5, DATA-6, DATA-8 | `constquery` |
 | Migration file names | DATA-11 | `tools/archcheck` |
 | Comment hygiene: ASCII punctuation, no plan references or step narration, ticketed TODOs | STY-5 | `comments` |

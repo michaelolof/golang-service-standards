@@ -140,7 +140,12 @@ These haven't been decided, and nothing enforces them yet.
 
 | Question | Decision |
 |---|---|
-| Can one statement write several tables, for example a transfer and its outbox row? | Yes, and it's the preferred form. Core composes writes in a transaction only as a last resort (DATA-4). |
+| Can one statement write several tables, for example a transfer and its outbox row? | Yes, and it's the default on every database that can do it. A transaction is allowed only for a database limit, inside the repository, or for boundary writes beside exactly one use-case call (DATA-4). |
+| What may stay outside the use-case statement? | Only a database limit, or a write to one of the recognised boundaries: a same-database job enqueue, a shared audit writer, or a shared idempotency store (DATA-4). The outbox event, the use case's own rows, and project repository methods that several use cases call aren't boundaries. |
+| Can a project add its own boundary? | Only by recording it under `## This project's own rules` in its `AGENTS.md`, with the three tests answered: shared, owned and atomic. The standard reviews it for its closed list (DATA-4). |
+| How is a boundary port marked? | Its interface embeds `txboundary.Port`, an empty interface in `internal/foundation/txboundary`. It's a type, not a comment, as required fields are marked with a tag (STY-3). Implementations and fakes don't change (DATA-4). |
+| Why not leave it to review? | Review didn't catch it. One adopting service had a stated reason on 1 of its 63 core-opened transactions. `txshape` checks the shape instead (DATA-4). |
+| Where is a transaction recorded? | In the implementation plan before work starts, and in the completion document after (COL-16, COL-9). |
 | Where are queries declared? | Inside the method that runs them, unless several methods share them (DATA-5). |
 | Can searches with many optional filters build SQL dynamically? | No need. Fixed queries return the same rows (DATA-5). |
 | Are cursors signed? | They carry a filter fingerprint, with no signature (DATA-9). |

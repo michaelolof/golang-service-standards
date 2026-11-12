@@ -112,7 +112,7 @@ Generated from the "Rules at a glance" tables. Don't edit it by hand. Each docum
 | DATA-1 | One package per aggregate, with a fixed set of files: `repo.go`, `row.go`, and one file per use case. |
 | DATA-2 | Repository methods take and return domain types. A database schema type isn't a domain type: it's private to the repository, and its fields may use domain types. One column list and one scan function per table, in `row.go`. |
 | DATA-3 | Method verbs come from a closed set, and names don't repeat the package name. |
-| DATA-4 | A change to several rows is one repository method named for the use case. Prefer one atomic statement (a CTE); otherwise the repository owns the transaction. Core never holds database semantics. |
+| DATA-4 | A change to several rows is one repository method named for the use case, and one statement by default. A transaction is allowed only for a database limit (inside the repository), or for boundary writes (shared, owned, atomic) beside exactly one use-case call. Core never holds database semantics. |
 | DATA-5 | Every query is a constant, declared inside the method that runs it. It moves to package level only when several methods share it. |
 | DATA-6 | Time comes from the clock. SQL `now()` is never used. |
 | DATA-7 | Optimistic concurrency uses a version column with an atomic compare-and-set. A CAS is never read-then-write. |
@@ -185,14 +185,14 @@ Generated from the "Rules at a glance" tables. Don't edit it by hand. Each docum
 | COL-6 | Implement in small steps, each ending green. Change only what the task needs. |
 | COL-7 | Refine against the standard with tests green, then run `task check`. |
 | COL-8 | `completed` means fully implemented, tested, verified when possible, and meeting the requirement. The agent marks it without asking, and reports completed or not completed, with the evidence. Never "should work". |
-| COL-9 | When a workstream's last task is `completed`, the agent writes a completion document straight away, without being asked: a standalone HTML file in `completion/`, checked in a browser, covering everything it did, why, the impact, code sources, many scenarios and any database change, with syntax highlighting on every code block. A small change with no plan or task list entry gets one too. It makes the case for the work honestly, and it must not lie. |
+| COL-9 | When a workstream's last task is `completed`, the agent writes a completion document straight away, without being asked: a standalone HTML file in `completion/`, checked in a browser, covering everything it did, why, the impact, code sources, many scenarios, any database change and every transaction used instead of one statement, with syntax highlighting on every code block. A small change with no plan or task list entry gets one too. It makes the case for the work honestly, and it must not lie. |
 | COL-10 | Only the engineer marks a task or a workstream `done`, by an explicit instruction after reviewing it. Review covers four concerns: works, solves the real problem, fits, reads well. |
 | COL-11 | Stop rules: two failed attempts, growing scope, a request that breaks the standard, a scope status that doesn't match what the agent finds, or pressure to skip a step. |
 | COL-12 | Autonomy is granted per task type and earned through measured results. |
 | COL-13 | Every repeated correction becomes a rule, a check, or a canonical example. |
 | COL-14 | Everything written for a person uses clear, approachable language, with a practical example and a code source. |
 | COL-15 | Each project keeps one living `tasklist.md`: a tracker table grouped into phases that each deliver something useful, linked to a section per task. A task can only depend on tasks above it. A dependency in another workstream that isn't `done` yet is a warning, not a blocker. Each scope is marked `greenfield`, `existing` or `unconfirmed`. The engineer sets it when the task list or a task is written, so the agent asks and never assumes, and nothing is planned or changed while it's `unconfirmed`. |
-| COL-16 | Each task being worked on is detailed in an implementation plan in `implementation/`, which the engineer approves before work starts. All the work one plan covers is one workstream. |
+| COL-16 | Each task being worked on is detailed in an implementation plan in `implementation/`, which the engineer approves before work starts. A plan that adds or changes a write lists each transaction it will use instead of one statement, with its justification and impact. All the work one plan covers is one workstream. |
 | COL-17 | Every implementation plan has a table of all the sub-tasks needed to finish it end to end, in the task list's format, with temporary IDs that exist only in that plan. |
 | COL-18 | Only the engineer deletes an implementation plan or completion document. A finished plan stays in the folder until the engineer explicitly says to delete it. |
 | COL-19 | A workstream goes to the engineer whole, implemented end to end. Never ask for `done` on part of it unless the engineer asked for that. If an item must be `done` before another in the same workstream or phase, ask first. |
