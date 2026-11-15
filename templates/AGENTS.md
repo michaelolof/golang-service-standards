@@ -32,12 +32,21 @@ Don't restructure existing tests. They're the guardrails during a refactor.
 
 You can mark work `completed` on your own. Only the engineer marks it `done`, by an explicit
 instruction. When a workstream's last task is `completed`, write its completion document,
-`completion/<topic>.html`, straight away, without being asked. Check it with Playwright MCP, using a
-full-page screenshot and the console, as COL-9 says, then send it to the engineer. Every code block in
-it has syntax highlighting, and any change to stored data gets its own section, with the schema and the
-explanation. A small change with no plan or task list entry gets a completion document too, with no
-`done` step. Never send part of a workstream for review. Never delete an implementation plan or
-completion document unless the engineer explicitly tells you to.
+`completion/<topic>.html`, straight away, without being asked, then send it to the engineer. Any
+change to stored data gets its own section, with the schema and the explanation. A small change with
+no plan or task list entry gets a completion document too, with no `done` step. Never send part of a
+workstream for review. Never delete a proposal, implementation plan or completion document unless the
+engineer explicitly tells you to.
+
+Proposals, implementation plans and completion documents are standalone HTML pages, as COL-22 says:
+`implementation/<topic>-proposal.html`, `implementation/<topic>.html` and `completion/<topic>.html`.
+Write each one as a walkthrough that a colleague new to the code can follow, like a clear technical
+blog post, never a list of edits: what happens today, why it's a problem, what changes, what it costs,
+and what you need from the engineer. Show every change as code, with syntax highlighting: today's code
+copied with its `path:line`, what a caller sees before and after, the diff, the new code in full, and
+its tests. Give colour a legend, and draw a diagram whenever a flow between services or a set of
+states changes. Before sending one, check it with Playwright MCP, using screenshots and the console:
+a full-page screenshot, and on a long page, one screen at a time.
 
 Every scope on the task list is marked `greenfield`, `existing` or `unconfirmed`, as COL-15 says. The
 engineer sets it when the task list or a task is written, because the repo can't show it. Never assume either way: mark it `unconfirmed`

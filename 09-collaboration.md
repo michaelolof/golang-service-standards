@@ -24,19 +24,20 @@ It draws on three sources:
 | COL-6 | Implement in small steps, each ending green. Change only what the task needs. |
 | COL-7 | Refine against the standard with tests green, then run `task check`. |
 | COL-8 | `completed` means fully implemented, tested, verified when possible, and meeting the requirement. The agent marks it without asking, and reports completed or not completed, with the evidence. Never "should work". |
-| COL-9 | When a workstream's last task is `completed`, the agent writes a completion document straight away, without being asked: a standalone HTML file in `completion/`, checked in a browser, covering everything it did, why, the impact, code sources, many scenarios, any database change and every transaction used instead of one statement, with syntax highlighting on every code block. A small change with no plan or task list entry gets one too. It makes the case for the work honestly, and it must not lie. |
+| COL-9 | When a workstream's last task is `completed`, the agent writes a completion document straight away, without being asked: a standalone HTML file in `completion/`, written and checked in a browser as COL-22 requires, covering everything it did, why, the impact, code sources, many scenarios, any database change and every transaction used instead of one statement. A small change with no plan or task list entry gets one too. It makes the case for the work honestly, and it must not lie. |
 | COL-10 | Only the engineer marks a task or a workstream `done`, by an explicit instruction after reviewing it. Review covers four concerns: works, solves the real problem, fits, reads well. |
 | COL-11 | Stop rules: two failed attempts, growing scope, a request that breaks the standard, a scope status that doesn't match what the agent finds, or pressure to skip a step. |
 | COL-12 | Autonomy is granted per task type and earned through measured results. |
 | COL-13 | Every repeated correction becomes a rule, a check, or a canonical example. |
 | COL-14 | Everything written for a person uses clear, approachable language, with a practical example and a code source. |
 | COL-15 | Each project keeps one living `tasklist.md`: a tracker table grouped into phases that each deliver something useful, linked to a section per task. A task can only depend on tasks above it. A dependency in another workstream that isn't `done` yet is a warning, not a blocker. Each scope is marked `greenfield`, `existing` or `unconfirmed`. The engineer sets it when the task list or a task is written, so the agent asks and never assumes, and nothing is planned or changed while it's `unconfirmed`. |
-| COL-16 | Each task being worked on is detailed in an implementation plan in `implementation/`, which the engineer approves before work starts. A plan that adds or changes a write lists each transaction it will use instead of one statement, with its justification and impact. All the work one plan covers is one workstream. |
+| COL-16 | Each task being worked on is detailed in an implementation plan, an HTML page in `implementation/`, which the engineer approves before work starts. A plan that adds or changes a write lists each transaction it will use instead of one statement, with its justification and impact. All the work one plan covers is one workstream. |
 | COL-17 | Every implementation plan has a table of all the sub-tasks needed to finish it end to end, in the task list's format, with temporary IDs that exist only in that plan. |
-| COL-18 | Only the engineer deletes an implementation plan or completion document. A finished plan stays in the folder until the engineer explicitly says to delete it. |
+| COL-18 | Only the engineer deletes a proposal, implementation plan or completion document. A finished plan stays in the folder until the engineer explicitly says to delete it. |
 | COL-19 | A workstream goes to the engineer whole, implemented end to end. Never ask for `done` on part of it unless the engineer asked for that. If an item must be `done` before another in the same workstream or phase, ask first. |
 | COL-20 | A session runs at most one subagent at a time, only when it's justified, and says why before starting it. |
 | COL-21 | Number every finding, piece of feedback, decision, concern, question and warning you report, in chat and in documents. A number means one item for the whole conversation or document: never restart at 1, reuse one, or number any other list. The numbers are for the engineer to point at. Never write one without saying what the item is. |
+| COL-22 | Proposals, implementation plans and completion documents are standalone HTML pages that read like a clear technical blog post: a walkthrough of the problem, the change and the reasoning, so the engineer can decide from the page alone. Every change is shown as code, with syntax highlighting: today's code with its source, what a caller sees before and after, the diff, the new code and its tests. Visual cues each do a job, colour always has a legend, and a change to a flow between services or to states gets a diagram. Each page is checked in a browser before it's sent. |
 
 ---
 
@@ -47,7 +48,7 @@ It draws on three sources:
 1. The engineer's current request.
 2. The repo's `AGENTS.md`.
 3. This standard.
-4. The repo's product and feature docs (PRD, feature specs, task list, implementation plans, runbooks).
+4. The repo's product and feature docs (PRD, feature specs, task list, proposals, implementation plans, runbooks).
 5. Existing code in the repo, starting with the canonical examples.
 6. General Go practice.
 
@@ -109,6 +110,8 @@ The engineer answers before any code is written. An ambiguity is a decision that
 - the files and layers it will touch;
 - each new abstraction, with the test it passes (03: hides a dependency, enforces an invariant, or has two real users);
 - the order of the sub-tasks (COL-17), and the point where it is cheapest to change course.
+
+When the plan depends on a choice between designs that the engineer must make first, such as the shape of a new table, the agent can put the options in a proposal before writing the plan (COL-22).
 
 A new service always needs explicit approval (HTTP-3). Small changes inside existing structure that aren't on the task list need no plan, but they still need a completion document (COL-9).
 
@@ -175,7 +178,7 @@ Never "should work", "I believe this fixes it" or "tests should pass". If the te
 
 A small change with no plan or task list entry gets a completion document too, for visibility, as short as the change allows. The report (COL-8) links to it. It has no status and no `done` step, because there's nothing to track it in.
 
-It covers everything that was implemented, not just the highlights. It's unambiguous and easy to read and follow, in the language COL-14 requires. It says all of this, laid out however communicates it best:
+It covers everything that was implemented, not just the highlights. It's written as COL-22 requires: a walkthrough that shows every change as code, in the language COL-14 requires. It says all of this, laid out however communicates it best:
 
 | Section | What it says |
 |---|---|
@@ -217,26 +220,7 @@ Each item the engineer might answer on its own has a number, with one count for 
 
 If there are none, the section says so.
 
-**The format.** A completion document is HTML because HTML presents and explains work better than Markdown: side-by-side before and after, diagrams, colour for what passed and what didn't, and interaction where it helps. That's the only reason, so use what helps the reader and nothing more.
-- It stands alone, like a Markdown file: one `.html` file with its styles and any scripts inside it. It needs no build step, shares no files with other documents, and loads nothing from the internet.
-- It can be as long as it needs to be. If the work reads better in more than one file, use more than one. Each still stands alone.
-- Nothing depends on it, so the engineer can delete it whenever it's out of date or no longer needed (COL-18).
-- Bad news is never collapsed. The summary, the acceptance criteria and the criteria not met are always visible.
-- Every code block has syntax highlighting for its language, including schemas, requests, responses and command output. The colours stay inside the page: use any highlighter while writing it and keep the coloured HTML, or put the highlighter's script in the page.
-- Code sources are written out as text, `path:line` (COL-14), because a browser can't open a local file at a line.
-
-**Check it in a browser.** Before sending it, open it with [Playwright MCP](https://github.com/microsoft/playwright-mcp), which this standard requires. Playwright MCP blocks `file:` URLs by default (tested on v0.0.82), so serve the folder first, with this or any other local server:
-
-```sh
-python3 -m http.server 8321 --bind 127.0.0.1 --directory completion
-```
-
-Open `http://127.0.0.1:8321/<topic>.html`, then do all of these. Playwright's page snapshot isn't enough, because it can't show the layout.
-- Take a full-page screenshot and look at it. Don't give it a file name, so it goes to Playwright's output folder and not into the project.
-- Read the browser console for errors.
-- Try anything interactive.
-
-Fix what's wrong and check again, then stop the server. If Playwright MCP isn't available, say so in the report, because the document hasn't been checked.
+**The format.** COL-22 sets the format for completion documents, proposals and plans alike: a standalone HTML page, with every change shown as code with syntax highlighting, visual cues that each do a job, and a check in a browser before it's sent. A completion document also never collapses bad news. The summary, the acceptance criteria and the criteria not met are always visible.
 
 Here's a cut-down example. It's invented, based on `TRF-016` (COL-15). A real one has every section and many more scenarios.
 
@@ -253,11 +237,13 @@ Here's a cut-down example. It's invented, based on `TRF-016` (COL-15). A real on
   table { border-collapse: collapse; width: 100%; }
   th, td { border: 1px solid #d0d7de; padding: .4rem .6rem; text-align: left; vertical-align: top; }
   code, pre { font-family: ui-monospace, monospace; font-size: .9em; }
-  pre { background: #f6f8fa; padding: .75rem; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  pre { background: #f6f8fa; padding: .75rem; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; }
   .met { color: #116329; font-weight: 600; }
   .unmet { color: #a40e26; font-weight: 600; }
   .warning { border-left: 4px solid #a40e26; background: #fff5f5; padding: .5rem 1rem; }
   .compare { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; }
+  .add { background: #dafbe1; color: #116329; }
+  .src { color: #59636e; font-size: .85em; margin-bottom: 0; }
   .kw { color: #cf222e; }
   .fn { color: #8250df; }
   .str { color: #116329; }
@@ -267,13 +253,20 @@ Here's a cut-down example. It's invented, based on `TRF-016` (COL-15). A real on
 <body>
 <h1>Completion: new asset and one-coin <code>acme</code> wallets</h1>
 <p><strong>Task:</strong> <a href="../tasklist.md#trf-016">TRF-016</a>.
-   <strong>Plan:</strong> <a href="../implementation/new-asset-and-acme.md">new-asset-and-acme.md</a>.
+   <strong>Plan:</strong> <a href="../implementation/new-asset-and-acme.html">new-asset-and-acme.html</a>.
    <strong>Status:</strong> <code>completed</code>. <strong>Scope:</strong> <code>API: greenfield</code>. <strong>Review:</strong> branch <code>new-asset-and-acme</code>.</p>
 
 <h2>Summary</h2>
 <p>Customers can now hold the new asset on <code>acme</code>, and each <code>acme</code> wallet holds exactly one coin.
    Four of the five acceptance criteria are fully met. The fifth passes in tests, but I couldn't check it against the
    real <code>acme</code>, because it has no test environment.</p>
+<p><strong>What I need from you:</strong></p>
+<ol>
+  <li>Whether the fifth criterion, checked only against a fake <code>acme</code>, is enough as it is, or whether to
+      create one real wallet first. See "Criteria not met".</li>
+</ol>
+<p><strong>How to read the colours:</strong> <span class="met">Met</span> and <span class="unmet">Not fully met</span>
+   for the criteria, and <span class="add">+ added</span> for new lines of code.</p>
 
 <h2>Acceptance criteria</h2>
 <table>
@@ -292,6 +285,19 @@ Here's a cut-down example. It's invented, based on `TRF-016` (COL-15). A real on
      create and the customer gets an error. You need to decide whether that's acceptable, or whether to create one
      real wallet to confirm it first.</p>
 </div>
+
+<h2>What was done</h2>
+<h3>Create refuses a second coin once it knows the provider is <code>acme</code></h3>
+<p>The check sits right after the provider is chosen, so it only applies to providers that hold one coin per wallet:</p>
+<p class="src"><code>internal/core/wallet/create.go:52</code></p>
+<pre><code> provider, err := s.router.<span class="fn">Select</span>(req.Network)
+ <span class="kw">if</span> err != <span class="kw">nil</span> {
+ 	<span class="kw">return</span> domain.Wallet{}, err
+ }
+<span class="add">+if err := ValidateWalletAssetCount(req.Assets, provider.Capabilities()); err != nil {
++	return domain.Wallet{}, err
++}</span>
+ <span class="kw">return</span> s.repo.<span class="fn">Create</span>(ctx, <span class="fn">newWallet</span>(req, provider))</code></pre>
 
 <h2>Database</h2>
 <p>None. Nothing stored changed: the new rules are checks in the code, and <code>supported_assets</code> keeps its column and type.</p>
@@ -324,8 +330,8 @@ for this provider; got 2. Create one wallet per asset"</span></pre></div>
 - a claim with no source, or that doesn't say how far it was checked;
 - something implemented that the document doesn't mention;
 - anything the engineer has to ask the meaning of;
-- a page that's broken, or that hides bad news in a collapsed section;
-- a code block with no syntax highlighting;
+- a page that hides bad news in a collapsed section;
+- a page that fails COL-22's checks, such as a change with no code or a code block with no syntax highlighting;
 - a change to stored data that the Database section doesn't cover;
 - a transaction in the touched code that the Transactions section doesn't list;
 - too few scenarios to decide from.
@@ -409,7 +415,7 @@ At every level, `completed` is as far as an agent can take work. Only the engine
 
 ## COL-14 · Clear language, practical examples, code sources
 
-**Rule.** Everything written for a person uses clear, approachable language, shows a practical example, and says where in the code it comes from. That covers proposals, plans, questions, reports, completion documents, explanations, findings, PR descriptions and review comments, whether an agent or an engineer wrote them.
+**Rule.** Everything written for a person uses clear, approachable language, shows a practical example, and says where in the code it comes from. That covers proposals, plans, questions, reports, completion documents, explanations, findings, PR descriptions and review comments, whether an agent or an engineer wrote them. Proposals, implementation plans and completion documents also follow COL-22: they're HTML walkthroughs that show every change as code.
 
 Write for a smart colleague who is new to this code. If they have to read something twice, or ask what it means, it isn't finished.
 
@@ -436,11 +442,11 @@ Write for a smart colleague who is new to this code. If they have to read someth
 
 | Writing | Must say |
 |---|---|
-| Proposal or plan (COL-5) | The problem, today's code and the new code, what it costs, the options not chosen and why, and what you need from the reader |
+| Proposal or plan (COL-5, COL-22) | The problem, today's code and the new code, what it costs, the options not chosen and why, and what you need from the reader |
 | Explanation | What happens, step by step and in order, then why it matters, then where it is in the code |
 | Finding or bug | What goes wrong, what triggers it, what should happen, whether real code can hit it, where it is, and how far you checked |
 | Report (COL-8) | Completed or not completed, the evidence, and the files changed |
-| Completion document (COL-9) | Everything that was implemented, why, the impact, and many scenarios, with every claim true and checkable |
+| Completion document (COL-9, COL-22) | Everything that was implemented, why, the impact, and many scenarios, with every claim true and checkable |
 | Question (COL-3) | The question, why the answer changes the work, and your proposed answer |
 
 ### Finding
@@ -705,7 +711,7 @@ chosen when the wallet is created.
 **Breaking changes.** `supported_assets` stays an array, but on `acme` wallets it must now
 hold exactly one asset. Nothing calls the API yet, so no caller has to change.
 
-**Implementation plan.** [implementation/new-asset-and-acme.md](implementation/new-asset-and-acme.md)
+**Implementation plan.** [implementation/new-asset-and-acme.html](implementation/new-asset-and-acme.html)
 ```
 
 The `<a id>` line keeps the tracker's link working if the title changes.
@@ -732,26 +738,28 @@ Without one format, each project's list drifts its own way. Across three codebas
 
 ## COL-16 · The implementation plan
 
-**Rule.** Each task being worked on is detailed in an implementation plan: a Markdown file in the `implementation/` folder, beside `tasklist.md`. It says what the work is, how it will be done and why, with clear examples of what the issue is and what needs to change, in the language COL-14 requires. A plan can cover one task or several, as the engineer instructs, and all the work it covers is one workstream (COL-19). The engineer approves it before implementation starts (COL-5).
+**Rule.** Each task being worked on is detailed in an implementation plan: an HTML page in the `implementation/` folder, beside `tasklist.md`, written as COL-22 requires. It says what the work is, how it will be done and why, with clear examples of what the issue is and what needs to change, shown as code. A plan can cover one task or several, as the engineer instructs, and all the work it covers is one workstream (COL-19). The engineer approves it before implementation starts (COL-5). If the engineer first chose between designs in a proposal, the plan links to it and carries the decision (COL-22).
 
 Plans are kept up to date until the engineer marks their work `done`. After that, a plan is a record of finished work, and it stays until the engineer deletes it (COL-18).
+
+A plan written in Markdown before COL-22 stays as it is, unless the engineer asks for it to be converted. Every new plan is HTML.
 
 | | Task list | Implementation plan |
 |---|---|---|
 | Answers | What needs doing, and in what order? | How and why will this task get done? |
 | Covers | The whole project, or a large part of it | One or more tasks |
 | Lasts | As long as the project | Until the engineer deletes it |
-| Where | `tasklist.md` | `implementation/<topic>.md` |
+| Where | `tasklist.md` | `implementation/<topic>.html` |
 
 ### What a plan contains
 
 | Section | What it says |
 |---|---|
-| Header | The tasks it covers (linked), its status, the repos it touches, and a link to the completion document once there is one (COL-9). |
-| Summary | What's being done and why, in a few sentences. |
+| Header | The tasks it covers (linked), its status, the repos it touches, its proposal if there was one, and a link to the completion document once there is one (COL-9). |
+| Summary | What's being done and why, in a few sentences, ending with what you need from the engineer (COL-22). |
 | Sub-task table | Every sub-task needed to finish the plan end to end (COL-17). |
-| The issue today | How the code behaves now, with code sources and an example of what goes wrong. |
-| What changes and what doesn't | The behaviour that changes, and what callers can rely on staying the same. |
+| The issue today | How the code behaves now, with the code copied from the repo, its source, and an example of what goes wrong. |
+| What changes and what doesn't | The behaviour that changes, shown as code (COL-22), and what callers can rely on staying the same. |
 | Keeping what exists working | Only for a scope marked `existing` (COL-15): how data moves, what callers must change, the order of the deploy, and the way back. |
 | Decisions | Each choice: the options, the one taken and why. Open ones are the engineer's to answer (COL-3). |
 | Transactions | Only for a plan that adds or changes a write: each transaction it will use instead of one statement, with the use case, the justification and the impact. See below. |
@@ -807,22 +815,28 @@ A plan that covers several tasks is finished when the engineer has marked the la
 - a plan for a scope that's still `unconfirmed`;
 - a plan whose tasks are all `done`, but whose header doesn't say so;
 - a plan that adds or changes a write, with a transaction it doesn't list, or an entry without its justification or impact;
-- a plan that fails COL-14's three tests.
+- a plan that fails COL-14's three tests, or COL-22's checks.
 
 ## COL-17 · The plan's sub-task table
 
-**Rule.** Every implementation plan has one table of all the sub-tasks needed to finish it end to end: the code, the tests, any migration, the docs, and the final check that it all works. The table comes straight after the plan's summary. It uses the same format as the task list's tracker (COL-15): the same columns, the same seven statuses, rows in phase order, and each row linked to a section further down the plan.
+**Rule.** Every implementation plan has one table of all the sub-tasks needed to finish it end to end: the code, the tests, any migration, the docs, and the final check that it all works. The table comes straight after the plan's summary. It's an HTML table in the same format as the task list's tracker (COL-15): the same columns, the same seven statuses, rows in phase order, and each row linked to a section further down the plan.
 
 Here's the table from the plan for `TRF-016`:
 
-```markdown
-| Sub-task ID | Title | Phase | Scope | Priority | Dependencies | Status |
-|---|---|---|---|---|---|---|
-| [ST-1](#st-1) | Map the new asset to `acme`'s code | 1 · New asset | API: greenfield | P0 | None | `completed` |
-| [ST-2](#st-2) | Accept the new asset on `ETH` only | 1 · New asset | API: greenfield | P0 | ST-1 | `completed` |
-| [ST-3](#st-3) | Enforce one asset per `acme` wallet | 2 · One-coin wallets | API: greenfield | P0 | None | `inprogress` |
-| [ST-4](#st-4) | Create `acme` accounts in the wallet's coin | 2 · One-coin wallets | API: greenfield | P0 | ST-3 | `todo` |
-| [ST-5](#st-5) | Check every acceptance criterion on a running service | 3 · End to end | API: greenfield | P0 | ST-2, ST-4 | `todo` |
+```html
+<table>
+  <tr><th>Sub-task ID</th><th>Title</th><th>Phase</th><th>Scope</th><th>Priority</th><th>Dependencies</th><th>Status</th></tr>
+  <tr><td><a href="#st-1">ST-1</a></td><td>Map the new asset to <code>acme</code>'s code</td><td>1 · New asset</td>
+      <td>API: greenfield</td><td>P0</td><td>None</td><td><code>completed</code></td></tr>
+  <tr><td><a href="#st-2">ST-2</a></td><td>Accept the new asset on <code>ETH</code> only</td><td>1 · New asset</td>
+      <td>API: greenfield</td><td>P0</td><td>ST-1</td><td><code>completed</code></td></tr>
+  <tr><td><a href="#st-3">ST-3</a></td><td>Enforce one asset per <code>acme</code> wallet</td><td>2 · One-coin wallets</td>
+      <td>API: greenfield</td><td>P0</td><td>None</td><td><code>inprogress</code></td></tr>
+  <tr><td><a href="#st-4">ST-4</a></td><td>Create <code>acme</code> accounts in the wallet's coin</td><td>2 · One-coin wallets</td>
+      <td>API: greenfield</td><td>P0</td><td>ST-3</td><td><code>todo</code></td></tr>
+  <tr><td><a href="#st-5">ST-5</a></td><td>Check every acceptance criterion on a running service</td><td>3 · End to end</td>
+      <td>API: greenfield</td><td>P0</td><td>ST-2, ST-4</td><td><code>todo</code></td></tr>
+</table>
 ```
 
 Title and Scope mean what they mean on the task list, and a sub-task's scope status always matches its task's. The others work like this in a plan:
@@ -841,52 +855,93 @@ To test the table, ask: "If every row were `completed`, would every acceptance c
 
 ### The sub-task section
 
-Each row has one section, in the same order as the table. It says why the work is needed, what changes, which tests, and when it's completed, and it's small enough to end with tests passing (COL-6). Like a task's section, it doesn't repeat what's in the table.
+Each row has one section, in the same order as the table. It says why the work is needed, what changes, which tests, and when it's completed, and it's small enough to end with tests passing (COL-6). It walks through the change and shows it as code, as COL-22 says. Like a task's section, it doesn't repeat what's in the table.
 
-Here's the section for `ST-3`:
+Here's the section for `ST-3`, cut down where it says `…`. The styles are the ones in COL-22's example.
 
-````markdown
-<a id="st-3"></a>
-### ST-3 · Enforce one asset per `acme` wallet
+````html
+<section id="st-3">
+<h3>ST-3 · Enforce one asset per <code>acme</code> wallet</h3>
 
-**Why.** A wallet has one address and one provider account. An `acme` account now holds
-one coin, so an `acme` wallet can only hold one coin.
+<p><strong>Why.</strong> <code>acme</code> now opens one account per coin, and each wallet has one provider account.
+   So an <code>acme</code> wallet can only hold one coin.</p>
 
-**The issue today.** Nothing stops a request that asks for two coins:
+<h4>Today, nothing stops a request for two coins</h4>
+<p>Create picks the provider, then saves every asset in the request. Nothing counts them first:</p>
+<p class="src"><code>internal/core/wallet/create.go:52</code></p>
+<pre><code>provider, err := s.router.<span class="fn">Select</span>(req.Network)
+<span class="kw">if</span> err != <span class="kw">nil</span> {
+	<span class="kw">return</span> domain.Wallet{}, err
+}
+<span class="kw">return</span> s.repo.<span class="fn">Create</span>(ctx, <span class="fn">newWallet</span>(req, provider))</code></pre>
 
-    POST /api/v1/wallets
-    {"supported_assets": ["USDC", "USDT"], "network": "BASE", ...}
+<h4>A request for two coins is refused, and the caller is told what to do instead</h4>
+<div class="compare">
+<div><p>Today</p>
+<pre><code><span class="kw">POST</span> /api/v1/wallets
+{<span class="key">"supported_assets"</span>: [<span class="str">"USDC"</span>, <span class="str">"USDT"</span>], <span class="key">"network"</span>: <span class="str">"ETH"</span>}
 
-    Today: the wallet is created with both coins, which acme can no longer hold.
-    After: 400, "supported_assets must contain exactly one asset for this provider; got 2.
-           Create one wallet per asset"
+→ 201 Created, with a coin acme can't hold</code></pre></div>
+<div><p>After</p>
+<pre><code><span class="kw">POST</span> /api/v1/wallets
+{<span class="key">"supported_assets"</span>: [<span class="str">"USDC"</span>, <span class="str">"USDT"</span>], <span class="key">"network"</span>: <span class="str">"ETH"</span>}
 
-**What changes.**
-- Add `OneAssetPerWallet bool` to `Capabilities`. `acme` sets it to `true` in `client.go`,
-  so services check the flag, not the provider's name.
-- Create: check the asset count after a provider is selected.
+<span class="chg">→ 400 Bad Request
+"supported_assets must contain exactly one asset for this
+provider; got 2. Create one wallet per asset"</span></code></pre></div>
+</div>
 
-  ```go
-  // internal/core/wallet/routing.go
-  func ValidateWalletAssetCount(assets []domain.KnownAsset, providerCaps domain.Capabilities) error {
-  	if providerCaps.OneAssetPerWallet && len(assets) != 1 {
-  		return errx.NewKindf(1793625670461, errkinds.ErrKindInvalidInput,
-  			"supported_assets must contain exactly one asset for this provider; got %d. Create one wallet per asset", len(assets))
-  	}
-  	return nil
-  }
-  ```
+<h4>The check runs after the provider is chosen, so other providers still accept several coins</h4>
+<p>A new <code>OneAssetPerWallet</code> flag on <code>Capabilities</code> says which providers hold one coin per
+   wallet, and <code>acme</code> sets it in <code>client.go</code>. Services check the flag, not the provider's name.
+   Create checks it here:</p>
+<p class="src"><code>internal/core/wallet/create.go:52</code></p>
+<pre><code> provider, err := s.router.<span class="fn">Select</span>(req.Network)
+ <span class="kw">if</span> err != <span class="kw">nil</span> {
+ 	<span class="kw">return</span> domain.Wallet{}, err
+ }
+<span class="add">+if err := ValidateWalletAssetCount(req.Assets, provider.Capabilities()); err != nil {
++	return domain.Wallet{}, err
++}</span>
+ <span class="kw">return</span> s.repo.<span class="fn">Create</span>(ctx, <span class="fn">newWallet</span>(req, provider))</code></pre>
 
-- Enable: allow only an asset the wallet already has. Otherwise, return a 409.
-- Delete: refuse with a 409, because an `acme` wallet keeps its coin for life.
+<p>The new function, in full:</p>
+<p class="src"><code>internal/core/wallet/routing.go</code> (new)</p>
+<pre><code><span class="kw">func</span> <span class="fn">ValidateWalletAssetCount</span>(assets []domain.KnownAsset, caps domain.Capabilities) <span class="kw">error</span> {
+	<span class="kw">if</span> caps.OneAssetPerWallet &amp;&amp; <span class="fn">len</span>(assets) != <span class="num">1</span> {
+		<span class="kw">return</span> errx.<span class="fn">NewKindf</span>(__STAMP__, errkinds.ErrKindInvalidInput,
+			<span class="str">"supported_assets must contain exactly one asset for this provider; got %d. Create one wallet per asset"</span>, <span class="fn">len</span>(assets))
+	}
+	<span class="kw">return</span> <span class="kw">nil</span>
+}</code></pre>
+<p>Checked: written, not compiled yet.</p>
 
-**Tests.**
-- Update `TestCreateWalletHandler_MultiAssetCreatesAllAssetRows`, which now expects a 400.
-- Add: two-asset create returns a 400 with a readable message.
-- Add: enabling a different coin returns a 409.
-- Add: deleting the asset returns a 409, and the asset row is still there.
+<h4>Enabling another coin, or removing the only one, is refused with a 409</h4>
+<p>…the same steps for enable and delete: today's code, the caller before and after, the diff…</p>
 
-**Completed when.** The new tests pass, and `task test` passes.
+<h4>Tests</h4>
+<p><code>TestCreateWalletHandler_MultiAssetCreatesAllAssetRows</code> now expects a 400. These are new:</p>
+<p class="src"><code>internal/core/wallet/routing_test.go</code> (new)</p>
+<pre><code><span class="kw">func</span> <span class="fn">TestValidateWalletAssetCount</span>(t *testing.T) {
+	oneCoin := domain.Capabilities{OneAssetPerWallet: <span class="kw">true</span>}
+	two := []domain.KnownAsset{domain.AssetUSDC, domain.AssetUSDT}
+	tests := []<span class="kw">struct</span> {
+		name    <span class="kw">string</span>
+		assets  []domain.KnownAsset
+		caps    domain.Capabilities
+		wantErr <span class="kw">bool</span>
+	}{
+		{<span class="str">"acme, one coin"</span>, two[:<span class="num">1</span>], oneCoin, <span class="kw">false</span>},
+		{<span class="str">"acme, two coins"</span>, two, oneCoin, <span class="kw">true</span>},
+		{<span class="str">"another provider, two coins"</span>, two, domain.Capabilities{}, <span class="kw">false</span>},
+	}
+	<span class="cm">// …</span>
+}</code></pre>
+<p>Two handler tests are added too: enabling a different coin returns a 409, and deleting the coin returns a 409
+   with the asset row still there.</p>
+
+<p><strong>Completed when.</strong> The new tests pass, and <code>task test</code> passes.</p>
+</section>
 ````
 
 ### Keeping it up to date
@@ -907,7 +962,7 @@ one coin, so an `acme` wallet can only hold one coin.
 
 ## COL-18 · Only the engineer deletes a plan
 
-**Rule.** Never delete an implementation plan unless the engineer has explicitly told you to delete it. This holds even when all its tasks are `done`, and however old it is. The same goes for a completion document. The engineer can delete one whenever it's out of date or no longer needed, and nothing depends on it, so a link left behind does no harm. Moving it out of the folder or emptying it counts as deleting it. Don't add a script, hook or CI job that deletes plans either.
+**Rule.** Never delete an implementation plan unless the engineer has explicitly told you to delete it. This holds even when all its tasks are `done`, and however old it is. The same goes for a proposal or a completion document. The engineer can delete one whenever it's out of date or no longer needed, and nothing depends on it, so a link left behind does no harm. Moving it out of the folder or emptying it counts as deleting it. Don't add a script, hook or CI job that deletes plans either.
 
 | The engineer says | Delete the plan? |
 |---|---|
@@ -970,7 +1025,7 @@ A subagent is justified only when one of these is true. The agent says which, in
 
 ## COL-21 · Number every item, and never use the number alone
 
-**Rule.** When you report findings, feedback, decisions, concerns, questions, proposals, risks or warnings, give each one a number. This applies wherever you write for a person (COL-14): replies in a chat or session, reports, plans, completion documents, audits, review comments and PR descriptions. An item is anything the engineer might want to answer, accept, reject or ask about on its own.
+**Rule.** When you report findings, feedback, decisions, concerns, questions, proposals, risks or warnings, give each one a number. This applies wherever you write for a person (COL-14): replies in a chat or session, reports, proposals, plans, completion documents, audits, review comments and PR descriptions. An item is anything the engineer might want to answer, accept, reject or ask about on its own.
 
 **How to number.**
 - Use plain numbers: 1, 2, 3.
@@ -1024,3 +1079,194 @@ Questions:
 **Why.** Reviewing work means answering items one at a time, and a number lets the engineer do that in a word. Two items with the same number make "fix 3" ambiguous, so each number has to mean one thing for the whole conversation. But a number is a pointer, not a description. A reply made of bare numbers sends the engineer back through the conversation to decode it, which costs more than the numbers saved. If they decode one wrongly, they approve or reject the wrong thing.
 
 **How it's checked.** Before sending anything, the writer finds every item number in it, including in summary lines and next steps, and checks that each one says what the item is. A person checks it too, because no linter can. In review (COL-10), a report or document goes back if it has an unnumbered item, a number used for two items, or a number with nothing next to it saying what it is. In a chat, the engineer points it out and the agent rewrites the reply.
+
+## COL-22 · Proposals, plans and completion documents are walkthroughs
+
+**Rule.** The engineer makes decisions from three documents: a proposal (which design to build), an implementation plan (whether to start) and a completion document (whether the work is `done`). Each one teaches the reader the problem, the change and the reasoning, so they can decide from the document alone, without a round of questions to work out what it means. All three:
+- read like a clear technical blog post: a walkthrough in plain words, not a changelog of edits or a research paper;
+- show every change as code: the code today, what a caller sees before and after, the change as a diff, the new code and its tests;
+- use visual cues that each do a job: before and after, colour with a legend, sample rows, walkthroughs and diagrams;
+- are standalone HTML pages, checked in a browser before they're sent.
+
+COL-14's language rules apply to every sentence in them, and COL-21's numbering applies to every item.
+
+| Document | Where | Written when | The engineer decides |
+|---|---|---|---|
+| Proposal | `implementation/<topic>-proposal.html` | The engineer must choose between designs before a plan can be approved, such as the shape of a new table (COL-5) | Which option to build |
+| Implementation plan (COL-16) | `implementation/<topic>.html` | Before work on a task starts | Whether to start the work as planned |
+| Completion document (COL-9) | `completion/<topic>.html` | As soon as a workstream is `completed` | Whether it's `done`, or needs more work, a correction or a revamp |
+
+**A proposal** says what COL-14 asks of one: the problem, today's code and the new code, what each option costs, the options not chosen and why, and what you need from the reader. Its header links to its tasks, and to the plan once there is one. It also gives the proposal's status: waiting for a decision, or the option the engineer chose. Once they choose, the plan carries the decision, and the proposal stays as the record of why (COL-18). A proposal small enough for one reply, like the one in COL-14, can stay in the chat.
+
+### Write a walkthrough, not a changelog
+
+The reader should finish the document understanding the work, not just knowing which lines will change.
+- **Tell each change in order:** what happens today, why that's a problem, what changes, what it looks like afterwards, and what it costs.
+- **Put the decision first.** The summary comes straight after the header, and it ends with what you need from the engineer: an approval, a choice or an answer, each one numbered (COL-21). The summary and any bad news are never collapsed.
+- **Make each heading say its point**, so the headings alone read as a summary: "A request for two coins is refused", not "Validation changes".
+- **Explain before you show.** Before each code block, table or diagram, say in a sentence what to look at. After it, say what it showed, unless that's obvious.
+- **Show the reasoning.** Each decision gives the options, the one taken, why, and what it costs. An option that's dropped stays in the document, greyed out, with why it was dropped and what replaced it. It keeps its number (COL-21).
+- **Say how far each claim was checked:** tested, read the code, or reported (COL-14).
+- **Let it be as long as it needs to be.** The length comes from examples and reasoning, never from saying the same thing twice.
+
+**Don't.** A list of edits. It's quick to read, but the engineer can't approve it without asking why each edit is needed and what a caller will see:
+
+> **ST-3 · One asset per wallet**
+> - Add `OneAssetPerWallet` to `Capabilities`.
+> - Validate the asset count in create.
+> - Return 409 on enable and delete.
+> - Update the tests.
+
+**Do.** Walk through it, so the engineer can decide from this alone. Here's how the same section starts:
+
+> **An `acme` wallet can only hold one coin, but nothing stops a request for two.**
+>
+> `acme` now opens one account per coin, and each wallet has one provider account. So a wallet with two coins has a coin that `acme` can't hold. Today, this request succeeds:
+>
+> ```http
+> POST /api/v1/wallets
+> {"supported_assets": ["USDC", "USDT"], "network": "ETH"}
+>
+> → 201 Created
+> ```
+>
+> After this change, it's refused, and the message tells the caller what to do instead:
+>
+> ```http
+> → 400 Bad Request
+> "supported_assets must contain exactly one asset for this provider; got 2. Create one wallet per asset"
+> ```
+>
+> The check runs after the provider is chosen, so other providers still accept several coins.
+
+[COL-17](#the-sub-task-section) shows the whole section as it appears in a plan.
+
+### Show every change as code
+
+The prose says why. The code shows exactly what will change, and it's what the engineer checks the work against. For each change, show these in order, leaving out any that don't apply:
+
+1. **The code today**, copied from the repo, with its source above it: `internal/core/wallet/create.go:52`.
+2. **What a caller sees**, before and after: the request, then the response or error today and after the change.
+3. **The change as a diff**, with removed lines in red and added lines in green.
+4. **The new code in full:** each new function, type or field, not a sketch of it.
+5. **The tests**, as code, so the engineer can judge whether they prove the acceptance criteria.
+6. **The SQL**, when stored data changes: the schema, copied from the migration or from the database's own output such as `SHOW CREATE TABLE`, with the changes marked, and the statements that read and write it. A completion document's Database section covers the rest (COL-9).
+
+For all of it:
+- Today's code is copied, never paraphrased or tidied up.
+- Proposed code is real Go in the project's style, following this standard, not pseudo-code. Where a stamp belongs, write `__STAMP__` (ERR-1). Say how far it was checked: compiled and tested on a scratch branch, or written but not compiled yet.
+- Mark the lines that matter, so the reader doesn't have to hunt for them.
+- Cut a long block down to the lines needed to follow the change, mark each cut with `…`, and give the file's path.
+- Every block has syntax highlighting for its language, including Go, SQL, JSON, HTTP, shell and command output. The colours stay inside the page: use any highlighter while writing it and keep the coloured HTML, or put the highlighter's script in the page.
+- Code sources are written as text, `path:line` (COL-14), because a browser can't open a local file at a line.
+
+### Visual cues
+
+HTML can show what Markdown can't. Each cue below has a job. Use the ones this work needs, and none for decoration.
+
+| Cue | What it's for |
+|---|---|
+| Before and after | Every change in behaviour, code, schema or response, side by side or as a diff. |
+| Colour | Red and struck through: removed. Green: added. Yellow: what a caller or user will notice. Green and red also mark met and not met. A legend near the top says what each colour means. A word or a sign always goes with the colour, so the page still reads when it's printed, or for someone who can't tell the colours apart. |
+| Sample rows | Each table whose contents change: a few rows before and after, so the reader sees the data, not only the columns. |
+| Walkthrough | A flow a caller or user goes through, told as an invented customer's story, step by step. Each step shows the request, what the service checks, what it sends a provider, the response, and the rows it writes. |
+| Refusals | Each request the change turns away, with its status and its exact message. |
+| Diagram | Required when the work changes how a request moves between services or components, or adds or changes states and the moves between them. Elsewhere, use one where it's clearer than text. Draw it inside the page, such as in inline SVG, and label every box and arrow in words. |
+| Numbered items | Each finding, decision, risk and question, numbered as COL-21 says. A withdrawn item stays, greyed out, with why. |
+
+### The page
+
+- It stands alone, like a Markdown file: one `.html` file with its styles and any scripts inside it. It needs no build step, shares no files with other documents, and loads nothing from the internet.
+- If the work reads better in more than one file, use more than one. Each still stands alone.
+- Its header links to the documents it belongs with, by relative path: its tasks, and its proposal, plan or completion document.
+- Nothing depends on it, so the engineer can delete it when it's no longer needed (COL-18).
+
+Here's how a plan's page starts. It's invented, based on `TRF-016` (COL-15). Start from these styles or your own, as long as yours do the same jobs.
+
+````html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plan: new asset and one-coin acme wallets</title>
+<link rel="icon" href="data:,">
+<style>
+  body { font: 16px/1.6 system-ui, sans-serif; max-width: 60rem; margin: 2rem auto; padding: 0 1rem; color: #1f2328; background: #fff; }
+  h2 { margin-top: 2.5rem; padding-bottom: .3rem; border-bottom: 1px solid #d0d7de; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #d0d7de; padding: .4rem .6rem; text-align: left; vertical-align: top; }
+  code, pre { font-family: ui-monospace, monospace; font-size: .9em; }
+  pre { background: #f6f8fa; border: 1px solid #d0d7de; padding: .75rem; overflow-x: auto; tab-size: 4; }
+  .src { color: #59636e; font-size: .85em; margin-bottom: 0; }
+  .compare { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; }
+  /* What changes. A word or a +/- sign always goes with the colour. */
+  .add { background: #dafbe1; color: #116329; }
+  .del { background: #ffebe9; color: #82071e; text-decoration: line-through; }
+  .chg { background: #fff8c5; }
+  .withdrawn { color: #59636e; }
+  /* Syntax highlighting */
+  .kw { color: #cf222e; } .fn { color: #8250df; } .str { color: #0a3069; }
+  .key, .num { color: #0550ae; } .cm { color: #59636e; font-style: italic; }
+</style>
+</head>
+<body>
+<h1>Plan: new asset and one-coin <code>acme</code> wallets</h1>
+<p><strong>Task:</strong> <a href="../tasklist.md#trf-016">TRF-016</a>.
+   <strong>Status:</strong> waiting for your approval. <strong>Repos:</strong> <code>wallet-service</code>.
+   <strong>Completion document:</strong> none yet.</p>
+
+<h2>Summary</h2>
+<p><code>acme</code> now opens one account per coin, but the service still asks it for one <code>USD</code> account
+   that takes every coin. This plan makes each <code>acme</code> wallet hold exactly one coin, chosen when the
+   wallet is created. It also adds the new asset, on Ethereum only.</p>
+<p><strong>What I need from you:</strong></p>
+<ol>
+  <li>Approval to start, or what to change first.</li>
+  <li>Whether removing an <code>acme</code> wallet's only coin should be refused, as I propose, or should close the wallet.</li>
+</ol>
+
+<p><strong>How to read the changes:</strong> <span class="del">− removed</span>, <span class="add">+ added</span>,
+   and <span class="chg">what a caller will notice</span>.</p>
+
+<!-- The sub-task table comes next (COL-17), then one section for each sub-task. -->
+</body>
+</html>
+````
+
+### Check it in a browser
+
+Before sending a proposal, a plan or a completion document, open it with [Playwright MCP](https://github.com/microsoft/playwright-mcp), which this standard requires. Playwright MCP blocks `file:` URLs by default (tested on v0.0.82), so serve the documents first. Serve the folder that holds `implementation/` and `completion/`, so the links between documents work. This or any other local server will do:
+
+```sh
+python3 -m http.server 8321 --bind 127.0.0.1
+```
+
+Open `http://127.0.0.1:8321/implementation/<topic>.html` or `http://127.0.0.1:8321/completion/<topic>.html`, then do all of these. Playwright's page snapshot isn't enough, because it can't show the layout.
+- Take a full-page screenshot and look at it. Don't give it a file name, so it goes to Playwright's output folder and not into the project.
+- On a long page, also look at it one screen at a time, with a screenshot of each screen as you scroll, or of each section. A full-page screenshot of a long page shrinks too far to read, and past about 16,000 pixels Chromium starts repeating the top of the page in it (tested on a plan 24,700 pixels tall).
+- Read the browser console for errors.
+- Try anything interactive.
+- Open each link to another document.
+
+Fix what's wrong and check again, then stop the server. If Playwright MCP isn't available, say so in the report, because the document hasn't been checked.
+
+**Why.** These documents are where the engineer decides: which design, whether to start, and whether the work is `done`. A list of edits is quick to write, but it leaves the engineer to rebuild the reasoning from the code, or to ask. Each question is a round trip while the work waits, and the answer stays in a chat where the next reader won't find it. The standard's owner found that plans written as lists of edits needed rounds of questions before they could be approved. Code examples matter most, because prose about code can be wrong in ways nobody notices, and the code is what the engineer can check.
+
+One project's schema proposal shows what works. It follows two invented customers through every request, response and stored row. It shows each table as the database reports it, with removed columns struck through in red and new ones in green, and it gives sample rows for each kind of transfer. Its three revisions are recorded in it, and the options it dropped stay visible, greyed out, with why.
+
+**How it's checked.** A person checks it in review, because no linter can tell whether a page explains. Before sending one, the writer runs COL-14's three tests, and these three:
+1. Could the engineer make their decision from this page alone, without asking anything?
+2. Does every change have its code: today's code, what a caller sees before and after, the diff, the new code and the tests?
+3. Did the browser check pass, with the screenshots looked at and no console errors?
+
+These go back:
+- a list of edits, with no walkthrough of the problem and the reasoning;
+- a change with no code, proposed code that's pseudo-code, or proposed code that doesn't say how far it was checked;
+- today's code paraphrased instead of copied, or with no source;
+- a code block with no syntax highlighting;
+- colour with no legend, or colour as the only signal;
+- a change to how a request moves between services, or to states, with no diagram;
+- a collapsed summary, or a decision the engineer has to dig for;
+- a page that's broken, loads anything from the internet, or wasn't checked in a browser;
+- anything the engineer has to ask the meaning of.

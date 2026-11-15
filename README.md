@@ -2,7 +2,7 @@
 
 These are the instructions for writing Go services, for engineers and for the coding agents that work with them. A rule applies when a project has the thing it talks about, so a project with no HTTP server skips the HTTP rules.
 
-They don't depend on any company, host, cloud, CI product, git forge, operating system or coding agent. A project needs git, Go and [Task](https://taskfile.dev), and any agent that can read a file can follow them. Agents also need [Playwright MCP](https://github.com/microsoft/playwright-mcp), to check completion documents in a browser (COL-9).
+They don't depend on any company, host, cloud, CI product, git forge, operating system or coding agent. A project needs git, Go and [Task](https://taskfile.dev), and any agent that can read a file can follow them. Agents also need [Playwright MCP](https://github.com/microsoft/playwright-mcp), to check proposals, plans and completion documents in a browser (COL-22).
 
 **Owner:** Michael Olofinjana (COL-13).
 
@@ -48,7 +48,7 @@ In your CI, add a job that installs Go and Task, and runs `task check`. Then mar
 
 Anyone who clones the project, person or agent, runs `task setup` once. It changes no tracked files on an up-to-date project. It only turns on the git hook, which git doesn't copy between clones.
 
-Each agent also needs [Playwright MCP](https://github.com/microsoft/playwright-mcp), to check completion documents in a browser (COL-9). `task setup` doesn't install it, because it belongs to the agent's setup, not the project.
+Each agent also needs [Playwright MCP](https://github.com/microsoft/playwright-mcp), to check proposals, plans and completion documents in a browser (COL-22). `task setup` doesn't install it, because it belongs to the agent's setup, not the project.
 
 ### What changes in the project
 
@@ -333,7 +333,7 @@ Following one cancel request through those files:
 | [08 · Security](08-security.md) | Authentication, tenant isolation, secrets, crypto, input and outbound calls, logging of sensitive data, dependencies | SEC-* |
 | [security-audit.md](security-audit.md) | The prompt for running a multi-tenant security audit, and the checklist for writing secure code | SEC-26 |
 | [10 · Adoption](10-adoption.md) | How a project consumes the standard, and what makes it mandatory for agents and people | ADO-* |
-| [09 · Collaboration](09-collaboration.md) | How an engineer and an agent take a task from brief to `done`: brief, questions, tests first, plan, `completed` and `done`, completion document, review, stop rules, autonomy, clear language, task lists, implementation plans, workstreams, numbering what's reported | COL-1…21 |
+| [09 · Collaboration](09-collaboration.md) | How an engineer and an agent take a task from brief to `done`: brief, questions, tests first, plan, `completed` and `done`, completion document, review, stop rules, autonomy, clear language, task lists, implementation plans, workstreams, numbering what's reported, how proposals, plans and completion documents are written | COL-1…22 |
 | [lint/.golangci.yml](lint/.golangci.yml) | The shared golangci-lint v2 config, the standard's own [`requiredtag`](lint/requiredtag) and [`wrapgaps`](lint/wrapgaps) plugins, and its structural [analyzers](lint/analyzers) | |
 | [decisions.md](decisions.md) | What was decided, and the few things still parked | |
 | [RULES.md](RULES.md) | Every rule on one page, generated from the tables in each document. It's what an agent loads first. | |
