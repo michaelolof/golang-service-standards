@@ -333,7 +333,7 @@ Following one cancel request through those files:
 | [08 · Security](08-security.md) | Authentication, tenant isolation, secrets, crypto, input and outbound calls, logging of sensitive data, dependencies | SEC-* |
 | [security-audit.md](security-audit.md) | The prompt for running a multi-tenant security audit, and the checklist for writing secure code | SEC-26 |
 | [10 · Adoption](10-adoption.md) | How a project consumes the standard, and what makes it mandatory for agents and people | ADO-* |
-| [09 · Collaboration](09-collaboration.md) | How an engineer and an agent take a task from brief to `done`: brief, questions, tests first, plan, `completed` and `done`, completion document, review, stop rules, autonomy, clear language, task lists, implementation plans, workstreams | COL-1…20 |
+| [09 · Collaboration](09-collaboration.md) | How an engineer and an agent take a task from brief to `done`: brief, questions, tests first, plan, `completed` and `done`, completion document, review, stop rules, autonomy, clear language, task lists, implementation plans, workstreams, numbering what's reported | COL-1…21 |
 | [lint/.golangci.yml](lint/.golangci.yml) | The shared golangci-lint v2 config, the standard's own [`requiredtag`](lint/requiredtag) and [`wrapgaps`](lint/wrapgaps) plugins, and its structural [analyzers](lint/analyzers) | |
 | [decisions.md](decisions.md) | What was decided, and the few things still parked | |
 | [RULES.md](RULES.md) | Every rule on one page, generated from the tables in each document. It's what an agent loads first. | |

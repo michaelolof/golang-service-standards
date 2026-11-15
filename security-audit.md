@@ -104,7 +104,7 @@ For every start/callback pair:
 ## Phase 3: report (stop here for approval)
 
 For each confirmed finding, give:
-- an ID and a severity (critical, high, medium or low), with one line on impact, e.g. "any signed-up customer can change tenant B's voice settings";
+- a number (COL-21) and a severity (critical, high, medium or low), with one line on impact, e.g. "any signed-up customer can change tenant B's voice settings";
 - the affected routes and files, with line numbers;
 - the failing test or request that proves it;
 - the proposed fix;

@@ -36,6 +36,7 @@ It draws on three sources:
 | COL-18 | Only the engineer deletes an implementation plan or completion document. A finished plan stays in the folder until the engineer explicitly says to delete it. |
 | COL-19 | A workstream goes to the engineer whole, implemented end to end. Never ask for `done` on part of it unless the engineer asked for that. If an item must be `done` before another in the same workstream or phase, ask first. |
 | COL-20 | A session runs at most one subagent at a time, only when it's justified, and says why before starting it. |
+| COL-21 | Number every finding, piece of feedback, decision, concern, question and warning you report, in chat and in documents. A number means one item for the whole conversation or document: never restart at 1, reuse one, or number any other list. The numbers are for the engineer to point at. Never write one without saying what the item is. |
 
 ---
 
@@ -153,14 +154,16 @@ Completed.
 - Changed: domain/transfer.go (Cancel), repository/transfers/transitions.go (CancelInitiated: one CTE),
   http/api/transfers/cancel.go (CancelTransferHandler).
 For your attention:
-- The SQL guard and the domain rule both check "no provider reference". The duplication is deliberate:
-  the SQL guard protects against concurrent requests. Say if you want it written differently.
+1. The SQL guard and the domain rule both check "no provider reference". The duplication is deliberate:
+   the SQL guard protects against concurrent requests. Say if you want it written differently.
 Deviations: none.
 Security check: not due until 2026-11-11.
 Warnings: none.
 ```
 
 The report always has a "Warnings" line, even if it says "none". A dependency in another workstream that isn't `done` yet goes there (COL-15). So does a security check that couldn't run, or a finding that's still open. The report also has a "Security check" line (SEC-27).
+
+Each item the engineer might answer on its own, such as each point under "For your attention" and each warning, has a number, and every mention of it says what it is (COL-21).
 
 Never "should work", "I believe this fixes it" or "tests should pass". If the tests or `task check` couldn't run, say exactly why, and that the task is therefore not `completed`.
 
@@ -190,6 +193,8 @@ It covers everything that was implemented, not just the highlights. It's unambig
 | Scenarios | Lots of them. See below. |
 | How to check it | The commands to run, so the engineer can see it work for themselves. |
 | Sources | Links or references to the code, tests and docs behind the claims above. |
+
+Each item the engineer might answer on its own has a number, with one count for the whole document (COL-21). That covers each criterion not met, each warning, each decision under Justification, and each risk under Impact.
 
 **Make the case for the work, and don't lie.** Write it as if you're selling the implementation to the engineer, with full honesty and transparency. Selling means explaining the work well, never making it look better than it is:
 - Every claim is true, and says how far it was checked: tested, read the code or reported (COL-14).
@@ -413,7 +418,7 @@ Write for a smart colleague who is new to this code. If they have to read someth
 - Say the main point first, then the detail.
 - Explain a technical term in a few words the first time you use it.
 - Say what happens, not what category it falls into: "the client can't parse the response", not "a serialization concern".
-- A rule or issue ID is a pointer, not an explanation. The sentence must still make sense with the ID removed: "a failed type assertion on the input in `Decode` is now a 400 (BUG-28)", never "BUG-28 is fixed".
+- A rule or issue ID is a pointer, not an explanation. The sentence must still make sense with the ID removed: "a failed type assertion on the input in `Decode` is now a 400 (BUG-28)", never "BUG-28 is fixed". The same goes for the numbers on reported items (COL-21).
 
 **Examples.**
 - For behaviour, show the input, what happens, and what should happen. For code, show the code today and the code after.
@@ -549,7 +554,7 @@ The gofi issue list behind this standard shows the cost. Its first versions used
 **How it's checked.** A person checks this, because no linter can. In review (COL-10), anything the reviewer has to ask about goes back. Before sending anything, the writer runs three tests:
 1. Could a colleague new to this code say what's wrong, or what's proposed, after one read?
 2. Can they open the file and see it for themselves?
-3. Remove every rule and issue ID. Does it still make sense?
+3. Remove every rule ID, issue ID and item number. Does it still make sense?
 
 ## COL-15 · The task list
 
@@ -962,3 +967,60 @@ A subagent is justified only when one of these is true. The agent says which, in
 **Why.** A subagent knows only what its prompt says, and the session sees only the summary it sends back, so detail is lost in both directions. Its mistakes come back sounding as confident as its findings. Each one costs tokens, several at once can edit the same files, and nobody can follow several streams of work at the same time.
 
 **How it's checked.** A person checks it in review, from the session and the report. No script checks it yet.
+
+## COL-21 · Number every item, and never use the number alone
+
+**Rule.** When you report findings, feedback, decisions, concerns, questions, proposals, risks or warnings, give each one a number. This applies wherever you write for a person (COL-14): replies in a chat or session, reports, plans, completion documents, audits, review comments and PR descriptions. An item is anything the engineer might want to answer, accept, reject or ask about on its own.
+
+**How to number.**
+- Use plain numbers: 1, 2, 3.
+- A conversation keeps one count from start to end, and so does each document. Never start again at 1 partway through. If a reply lists three findings and then two questions, they're 1 to 5, not 1 to 3 and 1 to 2.
+- A number belongs to one item for as long as the conversation or document lasts. When you report the items again, they keep their numbers. An item that's resolved, withdrawn or found to be wrong keeps its number too, and the number is never given to another item.
+- When an updated document goes back to the engineer (COL-10), every item still in it keeps its number, and new items carry on from the highest number used.
+- To mention a document's item in a chat, use the document's number and name the document: "4 in the completion document (…)".
+- Something that already has an ID of its own, such as a task (COL-15) or a sub-task in a plan (COL-17), keeps that ID and gets no number.
+- Number only the items. Any other list in the same reply or document, such as next steps or a suggested order of work, uses bullets, so a number never means two things.
+
+**The numbers are for the engineer, not the writer.** They let the engineer point at an item without retyping it: "fix 4", "agree with 2, not 5", "what do you mean in 7?". They're never a shorthand for the writer.
+- Every time you mention an item, in the first reply or the tenth, say in plain words what it is, next to its number.
+- That includes a range or a list of items, and one item pointing at another. Write "the fixes for 1 to 3 (the crash on a short last page, the crash on a negative size and the offset overflow) are small", never "fixes 1 to 3 are small". Write "this is also why 6 (database errors reach the client) happens", never "this is how 6 happens".
+- The sentence must still make sense with the number removed, as COL-14 says for every ID.
+- When the engineer uses bare numbers, answer with each number and what it is.
+
+**Don't.** The engineer has to scroll back to work out what each number means:
+
+> Fixed 3 and 7. 5 is still open, and 9 needs your decision.
+
+**Do.** Each number comes with what it is:
+
+> Fixed 3 (the outbox relay drops errors from `tick` without logging them) and 7 (a double quote in an error message breaks the JSON response). Still open: 5 (a restart leaves an export stuck in `processing`). Needs your decision: 9 (whether the KYC list should reject a filter it can't parse, instead of ignoring it as it does today).
+
+A reply that reports two kinds of item keeps one count:
+
+```text
+Findings:
+1. The outbox relay drops every error from tick, so a failed read never shows in the logs.
+   internal/adapters/kafka/control/kafka.go:298. Checked: read the code.
+2. A double quote in an error message breaks the JSON response, so the client can't parse it.
+   internal/core/httperr/encoder.go:45. Checked: tested.
+
+Questions:
+3. Should the relay stop after repeated failures, or keep retrying? The answer decides whether a
+   long Kafka outage pages someone. I propose: keep retrying, and log each failure.
+```
+
+| The situation | What to do |
+|---|---|
+| A reply has three findings, then two questions | Number them 1 to 5. |
+| The next reply covers the same findings and one new one | The old ones keep 1 to 3. The new one is 6. |
+| Finding 2 turns out to be wrong | Say so, with what it was: "2 (…) was wrong, because …". Never give 2 to another item. |
+| The engineer says "fix 4" | Fix it, and report "Fixed 4 (what it was)", never "Fixed 4". |
+| The engineer says "agree with 1 and 3" | Say what you'll do about 1 (what it is) and 3 (what it is). |
+| A reply ends with what to do next | Use bullets, and say what each item is: "Answer 15 (whether the endpoint is `existing` or `greenfield`) first", never "Answer 15 first". |
+| One item depends on another | Say what the other one is: "Depends on 17 (the maximum page size)", never "Depends on 17". |
+| The report's "Warnings" or "Security check" line points at items | Say what each is: "Warnings: 19 (the security check hasn't run) and 20 (`task check` can't run here)", never "Warnings: 19 and 20". |
+| A list of tasks from the task list | Use their task IDs. Don't number them again. |
+
+**Why.** Reviewing work means answering items one at a time, and a number lets the engineer do that in a word. Two items with the same number make "fix 3" ambiguous, so each number has to mean one thing for the whole conversation. But a number is a pointer, not a description. A reply made of bare numbers sends the engineer back through the conversation to decode it, which costs more than the numbers saved. If they decode one wrongly, they approve or reject the wrong thing.
+
+**How it's checked.** Before sending anything, the writer finds every item number in it, including in summary lines and next steps, and checks that each one says what the item is. A person checks it too, because no linter can. In review (COL-10), a report or document goes back if it has an unnumbered item, a number used for two items, or a number with nothing next to it saying what it is. In a chat, the engineer points it out and the agent rewrites the reply.

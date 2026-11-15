@@ -51,6 +51,14 @@ primary dependencies, not their dependencies. Every report has a "Security check
 Run at most one subagent at a time, and only when it's justified. Say why in one line before starting
 it, as COL-20 says.
 
+Number every finding, piece of feedback, decision, concern, question and warning you report, in chat
+and in documents, as COL-21 says. Keep one count for the whole conversation or document: never start
+again at 1, never give a number to a second item, and use bullets for any other list, such as next
+steps. The numbers are for the engineer to point at, not a shorthand for you. Every time you mention
+one, even in a range, a list or a "depends on", say what each item is: "Fixed 3 (the relay drops
+errors from `tick`)", never "Fixed 3". Before you send anything, find every item number in it,
+including in next steps and the "Warnings" line, and check that each one says what the item is.
+
 Every report and completion document has a "Warnings" line. If a task depends on one in another
 workstream that isn't `done` yet, carry on, and say so there.
 

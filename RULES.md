@@ -197,6 +197,7 @@ Generated from the "Rules at a glance" tables. Don't edit it by hand. Each docum
 | COL-18 | Only the engineer deletes an implementation plan or completion document. A finished plan stays in the folder until the engineer explicitly says to delete it. |
 | COL-19 | A workstream goes to the engineer whole, implemented end to end. Never ask for `done` on part of it unless the engineer asked for that. If an item must be `done` before another in the same workstream or phase, ask first. |
 | COL-20 | A session runs at most one subagent at a time, only when it's justified, and says why before starting it. |
+| COL-21 | Number every finding, piece of feedback, decision, concern, question and warning you report, in chat and in documents. A number means one item for the whole conversation or document: never restart at 1, reuse one, or number any other list. The numbers are for the engineer to point at. Never write one without saying what the item is. |
 
 ## [10 · Adoption: how a project takes on this standard](10-adoption.md)
 
