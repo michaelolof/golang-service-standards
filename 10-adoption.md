@@ -35,7 +35,7 @@ task setup
 git add -A && git commit -m "Pin standards v0.1.0"
 ```
 
-[templates/Taskfile.yml](templates/Taskfile.yml) has `check` and `check:fast`, because the hooks and CI call them, and `vuln`, because `check` runs it. If the project already has a Taskfile, copy those three tasks, the `vars` and the `includes` into it. Without them, every hook fails with `Task "check:fast" does not exist` (tested).
+[templates/Taskfile.yml](templates/Taskfile.yml) has `check` and `check:fast`, because the hooks and CI call them, and `vuln`, because `check` runs it. If the project already has a Taskfile, copy those three tasks, the `vars` and the `includes` into it. Without them, every hook fails with `Task "check:fast" does not exist` (tested). The template also has `test:up`, `test:down`, `test:integration` and `test:contract`, which mean the same in every project (TEST-3, TEST-17). Copy them too, or check that the project's own tasks of those names do the same.
 
 The result in a project:
 
@@ -83,7 +83,7 @@ We edited a rule inside a project, and the check failed. Reverting the edit made
 - says the rules are mandatory, and that a conflict must be raised before doing the work;
 - lists which document to read for each area;
 - says a task isn't finished until `task check` passes;
-- repeats the two mistakes agents make most often: inventing stamps, and restructuring existing tests.
+- repeats the two mistakes agents make most often: inventing stamps, and restructuring existing tests. It also says that new tests follow 07.
 
 [RULES.md](RULES.md) is every rule on one page, generated from the "Rules at a glance" tables: about 200 lines and 3,500 words, so it's short enough to load at the start of every session. An agent reads the full document only for the area it's changing.
 
@@ -201,10 +201,34 @@ Rules that no check can cover are checked in review (COL-10). A rule that keeps 
 1. Add the standard ([ADO-1](#ado-1--add-the-standard-to-a-project)).
 2. Review `AGENTS.old.md`, any `CLAUDE.md`, and any `AGENTS.md` in a subfolder ([ADO-3](#ado-3--one-agentsmd-at-the-root-of-each-code-repo)), so agents stop following instructions that contradict the standard. Do this first.
 3. Run `task check`, and turn what fails into task-list items (COL-15).
-4. Fix the code. Existing tests stay as they are and must keep passing (TEST-14). Test files aren't linted, so nothing here forces them to change.
+4. Fix the code. Existing tests stay as they are and must keep passing (TEST-14). Test files aren't linted. archcheck may ask for a handler test file, which is a new test, or a build line on a test file. Neither changes what an existing test asserts.
 5. Make `task check` a required check once it passes.
 
-New feature work waits until step 5.
+New feature work waits until step 5. New tests follow [07](07-testing.md) from the start, in every project (TEST-14).
+
+### Lifting TEST-14
+
+Restructuring existing tests is paused until the engineer lifts the pause for the project (TEST-14). The project records the lift in its `AGENTS.md`, under `## This project's own rules`, as a line starting `TEST-14 lifted:` with the date. Then it follows these steps, in this order. They come from the two services that have done it.
+
+1. **Before.** Run a counting script over all test code, and keep its output. It counts:
+   - skips, and resets of shared state;
+   - `assert` calls;
+   - private doubles, by name;
+   - `time.Now()`, `context.Background()` and sleeps;
+   - tests of the whole app that sit beside handlers and job handlers.
+2. **Tooling.** The test linters run over test files (TEST-13).
+3. **Mechanical changes,** which a linter or a script makes: tags and file names (TEST-1), no skips (TEST-2), `require` only (TEST-4), and `package x_test`.
+4. **Changes made by reading:** fakes into the three levels, with their conformance suites (TEST-6); helpers (TEST-9); names and tables (TEST-7); and the per-layer recipes (TEST-11, TEST-15).
+5. **Flows, one capability at a time,** starting with a pilot.
+   - Each flow either stays, because it needs several real parts (TEST-16), or moves down to a unit or handler test.
+   - Every removed test names its cover in a ledger: one row per test, with the test that covers its behaviour now.
+   - At the end, no test from the starting list is without a fate.
+6. **Evidence.**
+   - Run the counting script again, and compare it with the first run.
+   - Run the full integration suite three times in a row, each on a fresh stack (`task test:down` first).
+   - Check that no test database is left behind.
+
+[07](07-testing.md) shows what one service counted before and after.
 
 ## ADO-7 · Changing and upgrading
 
@@ -256,6 +280,33 @@ What `txshape` found when it was run on three codebases before release:
 
 golangci-lint shows one finding per line. A function of the same package that two transactions call is reported once, for the first of them, so the first codebase had 93 findings with that limit off (`--uniq-by-line=false`). Fixing the function fixes both.
 
+### Upgrading to the release with the testing recipes
+
+This release makes [07](07-testing.md) the default for every new test, and adds three mandatory rules: handler tests (TEST-15), flow tests (TEST-16), and contract tests and vendor mocks (TEST-17). It adds mandatory rules, so it ships in the next minor version.
+
+What changes for an existing project:
+- **New tests follow 07 from the upgrade on** (TEST-14). Where a new test needs a helper the project doesn't have yet, such as an `apitest` constructor or a capability builder, it adds one.
+- **Existing tests stay as they are** until the engineer lifts the pause ([Lifting TEST-14](#lifting-test-14)).
+- **`task setup` rewrites `AGENTS.md`.** Its line on tests now says that new tests follow 07.
+- **The template Taskfile has four test tasks:** `test:up`, `test:down`, `test:integration` and `test:contract`. A project with its own Taskfile copies them, or checks that its own tasks of those names do the same.
+- **archcheck has two new checks.** Every handler file has a test file of the same name beside it (TEST-15). A contract test lives in `test/contract`, every file there has the `contract` tag, and every file in `test/flows` has the `integration` tag (TEST-1).
+
+In the upgrade PR, run `task check`, and handle each new finding under TEST-14:
+1. **A missing handler test file is added,** following TEST-15. It's a new test, so the pause doesn't hold it back. Tests that already cover the handler under another name stay as they are until the lift. Examples are `create_integration_test.go`, or a `manage_test.go` that covers several handlers.
+2. **A wrong tag is fixed with the build line.** A contract test outside `test/contract` moves there. Neither changes what a test asserts.
+3. **Restructuring existing tests waits for the lift.**
+4. If the new test files are more than the upgrade PR can hold, stay on the old version and plan them as task-list items (ADO-6), as with the structural checks above.
+
+What the new checks found on three codebases before release:
+
+| Codebase | Handler files | Without a test file | Tag findings |
+|---|---|---|---|
+| A CockroachDB service, which has lifted TEST-14 | 110 | 0 | 0 |
+| A MongoDB service | 51 | 50, in 16 packages. 11 of them have a whole-app test of the same name ending in `_integration_test.go` | 1: `test/flows/doc.go` has no `integration` tag, though its own comment says the folder builds only with it |
+| A ScyllaDB service | 129 | 40, in 10 packages. Each of those packages tests its handlers in files named by theme, such as `manage_test.go` | 0 |
+
+None of the three had a contract test outside `test/contract`. archcheck's other checks found nothing on any of them.
+
 ## What's built and what isn't
 
 | Part | Status |
@@ -265,5 +316,5 @@ golangci-lint shows one finding per line. A function of the same package that tw
 | `task stamps` and `task stamps:check` | Done, and tested from `.standards/` on a clone of one project, and from the standard on two more |
 | Templates (`AGENTS.md`, `Taskfile.yml`, `claude-settings.json`), hooks, `standards:check` | Done, and tested |
 | The standard's first version tag | Done: `v0.1.0` |
-| Structural checks: the analyzers in `lint/analyzers`, including `constquery`, `repoverbs` and `txshape`, and `tools/archcheck` (TEST-13) | Done, each with fixtures, and run on three codebases before release. A project keeps no `internal/architecture` and no `arch` task. |
+| Structural checks: the analyzers in `lint/analyzers`, including `constquery`, `repoverbs` and `txshape`, and `tools/archcheck`, including its checks of handler test files and test tags (TEST-13) | Done, each with fixtures, and run on three codebases before release. A project keeps no `internal/architecture` and no `arch` task. |
 | Shared test helpers (`testharness`, `apitest`, `pagination.AssertStablePaging`, `testutils.AssertConcurrentUpdateConflicts`, the migrate-twice test, conformance suites) | To build. A project writes its own until then, from the descriptions in [07](07-testing.md) and [06](06-persistence.md). |

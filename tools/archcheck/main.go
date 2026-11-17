@@ -10,8 +10,11 @@
 //   - no README.md beside Go code under internal/ or cmd/ (LAY-11);
 //   - .env.example lists every variable the config's env tags read (LAY-13);
 //   - migration file names (DATA-11);
+//   - a contract test only in test/contract, and the contract tag on every file
+//     there; the integration tag on every file in test/flows (TEST-1);
 //   - the committed OpenAPI documents in docs/openapi: a description for every
 //     field and parameter, and an example for every scalar (HTTP-4);
+//   - a test file beside every file that declares a handler (TEST-15);
 //   - no binary in cmd/ carries test code that a library brings in (TEST-13);
 //   - every interface has an implementation, every port a consumer, and no two
 //     interfaces the same methods (ABS-1);

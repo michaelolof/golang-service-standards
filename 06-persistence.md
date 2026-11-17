@@ -666,6 +666,7 @@ func (r *Repo) Get(ctx context.Context, tenant domain.TenantRef, id domain.Trans
 
 **Rule.**
 - Timestamps are passed in from `clock.Clock` (DOM-3).
+- A repository that needs the time takes the clock as a dependency, and never builds its own. Otherwise a flow can't fix the time (TEST-16).
 - Never use SQL `now()`, `current_timestamp` or `$currentDate`.
 
 **Why.** A repository layer's SQL called `now()` about 180 times. Those rows can't be tested deterministically, and their timestamps disagree with the times the service itself records.

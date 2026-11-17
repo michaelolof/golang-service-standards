@@ -126,20 +126,23 @@ Generated from the "Rules at a glance" tables. Don't edit it by hand. Each docum
 
 | ID | Rule |
 |---|---|
-| TEST-1 | Each kind of test has one home and one build tag. A test with no tag uses no infrastructure. Each behaviour is tested once, at the lowest layer where it is real. |
+| TEST-1 | Each kind of test has one home, one build tag and one recipe. A test with no tag uses no infrastructure. Each behaviour is tested once, at the lowest layer where it is real. |
 | TEST-2 | Under its tag, missing infrastructure fails the test; it never skips. Nothing is gated by `testing.Short()` or environment variables. |
-| TEST-3 | Run one docker-compose stack through Task, and isolate tests by namespace. Never reset or flush global state. |
-| TEST-4 | Use testify `require` only, and compare whole values. |
-| TEST-5 | Test doubles are hand-written fakes named `fake…`. They are small working implementations that never embed the interface. |
-| TEST-6 | A shared fake lives in `xtest` and passes the same conformance suite as the real adapter. |
-| TEST-7 | Tables are for three or more data-only cases. Rows hold no functions and the loop body has no branches. Names follow fixed patterns. |
+| TEST-3 | Run one test stack through Task. Each integration package gets its own database, and each test its own tenant. Never reset or flush global state. |
+| TEST-4 | Use testify `require` only, and compare whole values. Assert an error's kind, and its text only when a person reads it. |
+| TEST-5 | Test doubles are hand-written fakes named `fake…`. They are small working implementations that never embed the interface. No test writes its own double for something a shared fake stands in for. |
+| TEST-6 | Shared fakes come in three levels: boundary fakes, repository fakes and capability builders. Each boundary and repository fake passes the same conformance suite as the real implementation. |
+| TEST-7 | Tables are for three or more data-only cases. Rows hold no functions and the loop body has no branches. Names say what the application does. |
 | TEST-8 | `t.Parallel()` is optional. Use it where a test shares nothing. |
-| TEST-9 | Helpers take `t testing.TB`, call `t.Helper()`, fail with `require`, use `t.Context()` and register `t.Cleanup`. |
+| TEST-9 | Helpers take `tb testing.TB`, call `tb.Helper()`, fail with `require`, use `tb.Context()` and register `tb.Cleanup`. |
 | TEST-10 | Builders return valid values with fixed IDs and times. `testdata/` holds no Go code. |
 | TEST-11 | Each layer has one testing recipe. |
 | TEST-12 | Time, IDs and randomness are injected. Use `synctest` inside a process. Polling across processes must fail on timeout. |
 | TEST-13 | Projects keep no `internal/architecture`. The standard's analyzers and `tools/archcheck` hold the structural checks, and each proves with fixtures that it reads code. Test code stays in tests. |
-| TEST-14 | Restructuring tests is paused. Existing tests stay as they are during refactors, as the guardrails. |
+| TEST-14 | New tests follow these testing rules in every project. Restructuring existing tests is paused until the engineer lifts the pause for the project. Until then, existing tests stay as they are, as the guardrails. |
+| TEST-15 | Every handler has a test file beside it. Requests go through the production route table and its auth to the real service over fakes. |
+| TEST-16 | A flow tests only what needs several real parts together. One harness builds the whole app per test. A test sets up through real boundaries, makes one call, and asserts. |
+| TEST-17 | Adapters are tested against an in-process vendor mock that enforces the vendor's documented contract. A contract test, run by hand, checks the vendor itself. |
 
 ## [08 · Security](08-security.md)
 

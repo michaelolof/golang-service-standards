@@ -944,5 +944,7 @@ Between 36% and 57% of these were in test files, mostly `paralleltest`, which ha
 | Comment hygiene: ASCII punctuation, no plan references or step narration, ticketed TODOs | STY-5 | `comments` |
 | Metric instrument names and units | OBS-2 | `metricnames` |
 | Test code only in tests, and in no binary | TEST-13 | `layers`, `tools/archcheck` |
-| Test-file rules: tag honesty, fake hygiene, table shape | TEST-1, TEST-5, TEST-7 | review, while restructuring tests is paused (TEST-14) |
+| A contract test only in `test/contract`, the `contract` tag on every file there, and the `integration` tag on every file in `test/flows` | TEST-1 | `tools/archcheck` |
+| A test file beside every file that declares a handler | TEST-15 | `tools/archcheck` |
+| Test-file rules: the `integration` tag on `_integration_test.go` files, fake hygiene, table shape | TEST-1, TEST-5, TEST-7 | review, while restructuring tests is paused (TEST-14) |
 | A function reads as a story: title, guards, one level of detail, names | STY-9 | review (the paragraphs are `wsl_v5`) |

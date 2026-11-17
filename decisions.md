@@ -9,8 +9,6 @@ These haven't been decided, and nothing enforces them yet.
 | Question | Where it stands |
 |---|---|
 | How do dashboards receive metrics? (OBS-2) | Telemetry is ignored until a project explicitly needs it, then added where required. |
-| How are database tests kept apart? (TEST-3) | The rule describes per-package databases with unique tenant IDs, but it isn't decided. |
-| Do HTTP handler tests use fakes or a real database? (TEST-11) | Left as it is. Fakes are fast and can force failures that are hard to create for real, such as a timeout. They prove nothing about your SQL. |
 | Should gofi's OpenAPI mark an optional pointer with a spec, and a `[]byte`, as `nullable`? (DOM-1) | gofi v0.10.4 writes `null` for a nil `*TransferID` or a nil `[]byte`, but the document says the field is never null. Clients have to handle `null` on those fields until gofi changes. |
 
 ## Scope and ownership
@@ -49,7 +47,8 @@ These haven't been decided, and nothing enforces them yet.
 | How does a check prove it reads code? | Its fixtures: each analyzer has at least one case it reports and one it doesn't, and archcheck has a module where every check fires and one where none does. No check counts what it read (TEST-13). |
 | Do two checks ever cover the same thing? | No. Where depguard, forbidigo or revive checks part of a rule, the analyzer leaves that part alone, and the rule's table names both. |
 | Are the new checks warnings first? | No. Everything is on from the release. A project fixes each finding or records the exception at the site, and stays on the old version until its upgrade passes (ADO-6, ADO-7). |
-| Are test files checked? | Not while restructuring tests is paused. The lint config skips test files, so TEST-1, TEST-5, TEST-7 and TEST-10 are for review until TEST-14 ends (TEST-13). |
+| Are test files checked? | Partly. archcheck checks that each handler file has its test file (TEST-15), and that contract and flow tests carry their tags (TEST-1). The lint config skips test files while restructuring is paused, so the rest of TEST-1, and TEST-5, TEST-7 and TEST-10, are for review (TEST-13). |
+| Does fixing archcheck's findings on tests break the pause? | No. A missing handler test file is a new test, and a tag fix changes when a test builds, not what it asserts (TEST-14). |
 | Who owns gofi's and enumx's conventions? | The libraries. `gofihandlers` checks gofi's GUIDELINES.md and `enums` follows enumx's declaration style; both live in `lint/analyzers` until the libraries publish their own (HTTP-1, DOM-6). |
 | Does archcheck report a variable `.env.example` lists that no tag reads? | No. The file also lists variables for docker compose, and for SDKs that read the environment themselves, and a line in it has nowhere to record why. archcheck checks the other direction, every tagged variable listed, and review checks this one (LAY-13). |
 | What does "project test" mean in an "Enforced by" column? | A test the project writes, of behaviour only a running test can show, such as the error body or two tenants. The rule says what it asserts. The column used to say "shared test" or "server test", which promised helpers the standard doesn't ship. Shared helpers for some are still to build (10-adoption). |
@@ -161,10 +160,16 @@ These haven't been decided, and nothing enforces them yet.
 
 | Question | Decision |
 |---|---|
-| Do we restructure existing tests? | Not for now. Existing tests are the guardrails during refactors (TEST-14). `t.Parallel()` is optional (TEST-8). |
-| `require` or `assert`? | `require` only, for new projects. |
-| How do table tests name an error kind? | A separate table per kind, for new projects. |
-| How is test infrastructure started? | docker compose through `task test:up`, for new projects (TEST-3). |
+| Do we restructure existing tests? | Not until the engineer lifts the pause for the project. The project records the lift in its `AGENTS.md` and follows 10-adoption's recipe. Until then, existing tests are the guardrails during refactors (TEST-14). `t.Parallel()` is optional (TEST-8). |
+| Which style do new tests follow? | This chapter, in every project. "The style already in their package" kept old patterns spreading in every project under the pause (TEST-14). |
+| `require` or `assert`? | `require` only, for every new test. |
+| How do table tests name an error kind? | A separate table per kind, for every new test. |
+| How is test infrastructure started? | docker compose through `task test:up` (TEST-3). |
+| How are database tests kept apart? | One database per package, created, migrated and dropped by the integration `TestMain`. A unique tenant and org per test. Nothing is reset (TEST-3). |
+| Do HTTP handler tests use fakes or a real database? | Fakes, through the production route table (TEST-15). The SQL is proven by each repository's conformance suite against the database (TEST-6). |
+| Why not test each route through the whole app and the database? | A rule tested twice costs time and points at nothing. One service moved 360 whole-app tests down to unit tests over fakes. Its unit suite went from 900 tests to 2,408, and still runs in 23 seconds (TEST-1). |
+| What does a vendor mock enforce? | The vendor's documented contract, from its documentation. Never its business logic, which tests choose with mock headers (TEST-17). |
+| When may a test assert an error's text? | When the text is the behaviour: a message a client or operator reads. An error with no kind, such as a config error, asserts its text, because nothing branches on it. Text only a developer reads is never asserted (TEST-4, ERR-5). |
 | Where do flow tests live? | `test/flows` (TEST-1). Every black-box suite is under `test/`, as LAY-1's tree shows, and the `layers` analyzer accepts no other folder. |
 | Where is miniredis allowed? | Anywhere. |
 

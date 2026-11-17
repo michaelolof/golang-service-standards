@@ -12,6 +12,24 @@ includes:
 tasks:
   test:       {desc: Unit tests, no infra, cmds: [go test -race ./...]}
   build:      {desc: Build everything, cmds: [go build ./...]}
+
+  # The test stack and the tagged tests (TEST-1, TEST-3, TEST-17).
+  test:up:
+    desc: Start the test stack, if it isn't running
+    cmds: [docker compose -f docker-compose.test.yml --env-file .env.test up -d --wait]
+  test:down:
+    desc: Stop the test stack and remove its data. Run it before a full integration run
+    cmds: [docker compose -f docker-compose.test.yml --env-file .env.test down -v --remove-orphans]
+  test:integration:
+    desc: Integration tests and flows against the test stack. Pass packages after --, or run them all
+    dotenv: [.env.test]
+    deps: [test:up]
+    cmds:
+      - go test -tags integration -race -count=1 -shuffle=on {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}./...{{end}}
+  test:contract:
+    desc: Contract tests against the vendors' sandboxes, by hand, with their credentials. Never in CI
+    cmds: [go test -tags contract -count=1 -v ./test/contract/...]
+
   vuln:       {desc: Known vulnerabilities in the code, cmds: [go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...]}
   check:fast: {desc: What the hooks run (the standard's local checks and unit tests), deps: [standards:check:fast, test]}
   check:      {desc: CI gate (read-only), deps: [standards:check, test, build, vuln]}
