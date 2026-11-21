@@ -10,8 +10,17 @@
 //   - no README.md beside Go code under internal/ or cmd/ (LAY-11);
 //   - .env.example lists every variable the config's env tags read (LAY-13);
 //   - migration file names (DATA-11);
-//   - a contract test only in test/contract, and the contract tag on every file
-//     there; the integration tag on every file in test/flows (TEST-1);
+//   - each kind of test's tag and home: the contract tag on every file in
+//     test/contract and nowhere else, the flow tag on every file in test/flows
+//     and nowhere else, no …_integration_test.go there, and the integration tag
+//     on exactly the …_integration_test.go files (TEST-1);
+//   - flow files hold only tests (TEST-19);
+//   - flows and the harness set up only through boundaries: no seed packages,
+//     no repository writes, no SQL in a flow and no SQL that writes in the
+//     harness, and no stand-in for the vendor mock (TEST-16);
+//   - the promises in docs/promises, the flows and the operations in
+//     docs/openapi agree (TEST-18);
+//   - no function in test code is left uncalled (TEST-19);
 //   - the committed OpenAPI documents in docs/openapi: a description for every
 //     field and parameter, and an example for every scalar (HTTP-4);
 //   - a test file beside every file that declares a handler (TEST-15);

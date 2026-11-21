@@ -900,7 +900,7 @@ Between 36% and 57% of these were in test files, mostly `paralleltest`, which ha
 
 **Before turning it on.**
 - Run `task fmt` once. gci can crash on a file that was never formatted.
-- Fix any `integration`-tagged test that no longer compiles. When no task builds tagged tests, a changed signature can break one with nobody noticing. The config's `build-tags: [integration]` will fail type-checking until it is fixed.
+- Fix any `integration`-tagged test that no longer compiles. `task test:build` lists every tagged test that doesn't compile (TEST-1). The config's `build-tags: [integration]` will fail type-checking until it is fixed.
 
 **Checks golangci-lint's own linters can't express** are the standard's analyzers, compiled into the same golangci-lint ([lint/analyzers](lint/analyzers)), or `tools/archcheck`, which `task standards:check` runs for what needs the whole module or files that aren't Go (TEST-13). A project writes no checking code of its own.
 
@@ -944,7 +944,10 @@ Between 36% and 57% of these were in test files, mostly `paralleltest`, which ha
 | Comment hygiene: ASCII punctuation, no plan references or step narration, ticketed TODOs | STY-5 | `comments` |
 | Metric instrument names and units | OBS-2 | `metricnames` |
 | Test code only in tests, and in no binary | TEST-13 | `layers`, `tools/archcheck` |
-| A contract test only in `test/contract`, the `contract` tag on every file there, and the `integration` tag on every file in `test/flows` | TEST-1 | `tools/archcheck` |
+| Each kind's tag and home: the `contract` tag only in `test/contract`, the `flow` tag only in `test/flows`, no `_integration_test.go` there, and the `integration` tag on exactly the `_integration_test.go` files | TEST-1 | `tools/archcheck` |
 | A test file beside every file that declares a handler | TEST-15 | `tools/archcheck` |
-| Test-file rules: the `integration` tag on `_integration_test.go` files, fake hygiene, table shape | TEST-1, TEST-5, TEST-7 | review, while restructuring tests is paused (TEST-14) |
+| Flows and the harness set up only through boundaries: no seed package, no repository write, no SQL in a flow, no SQL that writes in the harness, no stand-in for the vendor mock | TEST-16 | `tools/archcheck` |
+| The promises in `docs/promises`, the flows, and the operations in `docs/openapi` agree | TEST-18 | `tools/archcheck` |
+| Flow files hold only tests; no test function is left uncalled | TEST-19 | `tools/archcheck` |
+| Test-file rules: fake hygiene, table shape | TEST-5, TEST-7 | review, while restructuring tests is paused (TEST-14) |
 | A function reads as a story: title, guards, one level of detail, names | STY-9 | review (the paragraphs are `wsl_v5`) |

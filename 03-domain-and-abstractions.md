@@ -681,7 +681,7 @@ func (c *OIDCClient) AuthorizeURL(s, p string) string { return c.client.Authoriz
 ```
 
 **Enforced by.**
-- review, for speculative code. A reviewer lists what nothing reaches, from any binary or test, with `go run golang.org/x/tools/cmd/deadcode@v0.52.0 -test ./...`. It isn't a check in `task check`: some of what it lists is kept on purpose, such as a logger's `Debug` that nothing calls yet, and a finding there has no line to record why. Its findings in test files and test packages wait for TEST-14's pause to end.
+- review, for speculative code. A reviewer lists what nothing reaches, from any binary or test, with `go run golang.org/x/tools/cmd/deadcode@v0.52.0 -test -tags integration,flow,contract,perf ./...`. For production code it isn't a check in `task check`: some of what it lists is kept on purpose, such as a logger's `Debug` that nothing calls yet, and a finding there has no line to record why. In test code it is: `tools/archcheck` reports every function nothing calls, and deleting one is allowed under TEST-14's pause (TEST-19).
 - `interfacebloat` (max 7), except in `internal/http/deps/` (ABS-1).
 - `iface` (`identical`, `unused`, `opaque`). `unused` is off in `ports/`, `foundation/` and `jobs/` (ABS-1).
 - `ireturn`, which allows gofi's own interfaces, and is off in `internal/http/deps/`.

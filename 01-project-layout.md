@@ -51,7 +51,7 @@ cmd/tools/<name>/           one-shot CLIs: migrate, openapi, seed, dev mocks
 internal/                   all application code (LAY-6)
 pkg/<name>/                 libraries being incubated for extraction; import nothing from internal/
 db/migrations/              migration files + embed.go (package migrations, exports its embed.FS only)
-docs/                       openapi/ (generated, committed), runbooks/, adr/
+docs/                       openapi/ (generated, committed), promises/ (TEST-18), runbooks/, adr/
 deploy/                     platform entrypoints, compose overrides, release scripts
 scripts/                    shell helpers called only from the Taskfile
 test/<suite>/               black-box suites: flows, e2e, contract, perf (build-tagged, TEST-1)
@@ -693,6 +693,7 @@ store, err := s3store.New(ctx, s3store.Config{Endpoint: cfg.S3.Endpoint, Region:
 - Pin tools with `tool` directives in `go.mod` and run them with `go tool …`, so a missing tool fails instead of degrading to a weaker check. The exception is golangci-lint: `Taskfile.standards.yml` pins and builds it, because it needs the standard's plugin and would add about 200 lines to a project's `go.mod` (tested).
 - Include the standard's own tasks from `.standards/Taskfile.standards.yml`, instead of writing them (ADO-1). `check` depends on `standards:check`, and `check:fast` on `standards:check:fast`, so a check added to the standard reaches every project when it upgrades.
 - `check:fast` is what the hooks run (ADO-4), so it stays quick.
+- Each kind of test has its own task, and no task runs another kind's tests: `test`, `test:integration`, `test:flows`, `test:contract`, and `test:all` for the first three on a fresh stack. `check` depends on `test:build`, which compiles every tagged test (TEST-1). [templates/Taskfile.yml](templates/Taskfile.yml) has them.
 
 **Why.**
 
@@ -713,15 +714,15 @@ includes:
     flatten: true
 
 tasks:
-  test:             {desc: Unit tests, no infra,                    cmds: [go test -race ./...]}
-  test:integration: {desc: Integration tests against infra,         cmds: [go test -race -tags integration ./...]}
-  test:e2e:         {desc: Black-box suites in ./test,              cmds: [go test -tags e2e ./test/...]}
+  test:             {desc: Unit and handler tests. No infrastructure, cmds: [go test -race ./...]}
+  # test:up, test:down, test:integration, test:flows, test:all, test:build and test:contract: as in templates/Taskfile.yml (TEST-1)
+  test:e2e:         {desc: The e2e suite against a deployment,       cmds: [go test -C test/e2e -tags e2e ./...]}
   build:            {desc: Build all binaries into bin/,            cmds: [go build -o bin/ ./cmd/...]}
   generate:         {desc: go generate + OpenAPI snapshots,         cmds: [go generate ./..., go run ./cmd/tools/openapi -out docs/openapi]}
   generate:check:   {desc: Fail if generated files are stale,       cmds: [go run ./cmd/tools/openapi -check -out docs/openapi]}
   vuln:             {desc: govulncheck,                             cmds: [go tool govulncheck ./cmd/...]}
   check:fast:       {desc: What the hooks run (the standard's local checks and unit tests), deps: [standards:check:fast, test]}
-  check:            {desc: CI gate (read-only), deps: [standards:check, test, build, generate:check, vuln]}
+  check:            {desc: CI gate (read-only), deps: [standards:check, test, test:build, build, generate:check, vuln]}
   infra:up:         {desc: Start local deps,   dotenv: [.env.local], cmds: [docker compose -f docker-compose.local.yml up -d --wait]}
   infra:down:       {desc: Stop local deps,    cmds: [docker compose -f docker-compose.local.yml down]}
   migrate:up:       {desc: Apply migrations,   dotenv: [.env.local], cmds: [go run ./cmd/tools/migrate up]}

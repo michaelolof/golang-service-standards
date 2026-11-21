@@ -95,12 +95,16 @@ func callsDefineHandler(info *types.Info, expr ast.Expr) bool {
 	return ok && fn.Pkg() != nil && fn.Pkg().Path() == gofiPath && fn.Name() == "DefineHandler"
 }
 
-// checkTestHomes reports a Go file whose build tag doesn't match its home
-// (TEST-1): a contract test outside test/contract, a file in test/contract
-// without the contract tag, and a file in test/flows without the integration
-// tag. It reads the files themselves, because the build archcheck loads leaves
-// contract tests out. Which _integration_test.go files carry the integration
-// tag is for review.
+// checkTestHomes reports a Go file whose build tag doesn't match its home or
+// its name (TEST-1), so each kind of test builds only under its own task:
+//   - a file in test/contract without the contract tag, or a contract test
+//     outside it;
+//   - a file in test/flows without the flow tag, a flow outside it, or a file
+//     there named …_integration_test.go;
+//   - an …_integration_test.go file without the integration tag, or a file with
+//     that tag and any other name, shared test code included.
+//
+// It reads the files themselves, so a file that no build includes is checked too.
 func checkTestHomes(m *module) ([]problem, error) {
 	var problems []problem
 
@@ -128,13 +132,13 @@ func checkTestHomes(m *module) ([]problem, error) {
 
 		rel := m.rel(path)
 
-		switch {
-		case within(rel, "test/contract") && !requires(expr, "contract"):
-			problems = append(problems, problem{path: rel, msg: "every file in test/contract has //go:build contract, so only task test:contract reaches the vendor (TEST-1)"})
-		case !within(rel, "test/contract") && requires(expr, "contract"):
-			problems = append(problems, problem{path: rel, line: line, msg: "a contract test lives in test/contract: move this file there (TEST-1)"})
-		case within(rel, "test/flows") && !requires(expr, "integration"):
-			problems = append(problems, problem{path: rel, msg: "every file in test/flows has //go:build integration, so a run without the test stack never builds a flow (TEST-1)"})
+		for _, f := range tagFindings(rel, d.Name(), expr) {
+			p := problem{path: rel, msg: f.msg}
+			if f.onBuildLine {
+				p.line = line
+			}
+
+			problems = append(problems, p)
 		}
 
 		return nil
@@ -144,6 +148,50 @@ func checkTestHomes(m *module) ([]problem, error) {
 	}
 
 	return problems, nil
+}
+
+// tagFinding is one way a file's tag doesn't match its home or its name. A
+// finding about a tag the file has points at its build line. One about a tag it
+// lacks, or about its name, points at the file.
+type tagFinding struct {
+	onBuildLine bool
+	msg         string
+}
+
+// tagFindings returns what's wrong with a file's tag, from its path, its name
+// and its build expression.
+func tagFindings(rel, name string, expr constraint.Expr) []tagFinding {
+	inContract, inFlows := within(rel, "test/contract"), within(rel, "test/flows")
+	integrationName := strings.HasSuffix(name, "_integration_test.go")
+
+	var found []tagFinding
+
+	switch {
+	case inContract && !requires(expr, "contract"):
+		found = append(found, tagFinding{false, "every file in test/contract has //go:build contract, so only task test:contract reaches the vendor (TEST-1)"})
+	case !inContract && requires(expr, "contract"):
+		found = append(found, tagFinding{true, "a contract test lives in test/contract: move this file there (TEST-1)"})
+	}
+
+	switch {
+	case inFlows && !requires(expr, "flow"):
+		found = append(found, tagFinding{false, "every file in test/flows has //go:build flow, so only task test:flows builds a flow (TEST-1)"})
+	case !inFlows && requires(expr, "flow"):
+		found = append(found, tagFinding{true, "a flow lives in test/flows: move this file there (TEST-1)"})
+	}
+
+	switch {
+	case inFlows && integrationName:
+		found = append(found, tagFinding{false, "rename it: a flow package's TestMain is in main_test.go, and no file in test/flows ends in _integration_test.go (TEST-1)"})
+	case inFlows:
+		// A flow's tag is checked above.
+	case integrationName && !requires(expr, "integration"):
+		found = append(found, tagFinding{false, "every _integration_test.go file has //go:build integration, so only task test:integration builds it (TEST-1)"})
+	case !integrationName && requires(expr, "integration"):
+		found = append(found, tagFinding{true, "only a file named …_integration_test.go has //go:build integration: rename it, or take the tag off shared test code, which every kind builds (TEST-1)"})
+	}
+
+	return found
 }
 
 // outsideModule says whether the go tool leaves the folder out of the module:

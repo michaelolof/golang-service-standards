@@ -103,6 +103,7 @@ Your code, `go.mod`, `README.md` and `.gitignore` don't change, and `go list ./.
 | `task check:fast` | Runs the checks that don't need the network, plus unit tests. This is what the hooks run. |
 | `task fmt` | Fixes formatting, and whatever else the linters can fix on their own. |
 | `task stamps` | Replaces each `__STAMP__` in the Go code with its own stamp, read from the clock (ERR-1). |
+| `task test`, `task test:integration`, `task test:flows`, `task test:all` | Each runs one kind of test: unit and handler tests, integration tests, or flows. `task test:all` runs all three on a fresh test stack (TEST-1). |
 | `task setup` | Writes `AGENTS.md` and `.golangci.yml`, and turns on the git hook. |
 
 **If the project already has a Taskfile,** add to it by hand.
@@ -132,11 +133,15 @@ includes:
 
 tasks:
   run:        {desc: Run the service, cmds: [go run ./cmd/services/api]}
-  test:       {desc: Unit tests, no infra, cmds: [go test -race ./...]}
+  test:       {desc: Unit and handler tests. No infrastructure, cmds: [go test -race ./...]}
   build:      {desc: Build everything, cmds: [go build ./...]}
+  test:build:
+    desc: Compile every tagged test without running it, so a change can't break one unseen
+    cmds:
+      - go vet -tags integration,flow,contract,perf ./...
   vuln:       {desc: Known vulnerabilities in the code, cmds: [go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...]}
   check:fast: {desc: What the hooks run (the standard's local checks and unit tests), deps: [standards:check:fast, test]}
-  check:      {desc: CI gate (read-only), deps: [standards:check, test, build, vuln]}
+  check:      {desc: CI gate (read-only), deps: [standards:check, test, test:build, build, vuln]}
 ```
 
 ### If the project already has an `AGENTS.md`
@@ -329,7 +334,7 @@ Following one cancel request through those files:
 | [04 · Errors](04-errors.md) | Stamps, which errx functions to use, wrapping, kinds, boundary translation, HTTP and worker mapping, logging once, panics | ERR-1…13 |
 | [05 · Transport and runtime](05-transport-and-runtime.md) | gofi handlers (following gofi's GUIDELINES.md), routes, middleware, OpenAPI, moving to gofi v0.10.4; jobs; context; concurrency; logging; telemetry | HTTP-1…7, JOB-1…4, CTX-1…4, CON-1…3, LOG-1…4, OBS-1…3 |
 | [06 · Persistence](06-persistence.md) | Repository shape, transactions, queries, concurrency control, idempotency, cursors, caching, migrations, database-specific rules | DATA-1…12 |
-| [07 · Testing](07-testing.md) | Test kinds and tags, what to test where, the test stack, assertions, fakes and capability builders, tables and names, parallelism, helpers, per-layer recipes, determinism, meta tests, the pause on restructuring tests, handler tests, flow tests, contract tests and vendor mocks | TEST-1…17 |
+| [07 · Testing](07-testing.md) | Test kinds, tags and the task that runs each, what to test where, the test stack, assertions, fakes and capability builders, tables and names, parallelism, helpers, per-layer recipes, determinism, meta tests, the pause on restructuring tests, handler tests, flow tests, contract tests and vendor mocks, the promises tests prove, and helpers that do one thing | TEST-1…19 |
 | [08 · Security](08-security.md) | Authentication, tenant isolation, secrets, crypto, input and outbound calls, logging of sensitive data, dependencies | SEC-* |
 | [security-audit.md](security-audit.md) | The prompt for running a multi-tenant security audit, and the checklist for writing secure code | SEC-26 |
 | [10 · Adoption](10-adoption.md) | How a project consumes the standard, and what makes it mandatory for agents and people | ADO-* |
@@ -340,8 +345,9 @@ Following one cancel request through those files:
 | [templates/](templates), [hooks/](hooks), [Taskfile.standards.yml](Taskfile.standards.yml) | What a project takes from here to make the rules mandatory ([Install](#install)) | |
 | [tools/stamps](tools/stamps) | The tool behind `task stamps` and `task stamps:check` (ERR-1) | |
 | [tools/archcheck](tools/archcheck) | The checks that need the whole module or files that aren't Go, run by `task standards:check` (TEST-13) | |
+| [tools/testpackages](tools/testpackages) | Lists the packages that have one kind of test, so `task test:integration` runs only those (TEST-1) | |
 
-There are 163 rules. Each has an ID, so a review comment or an agent can cite one: "violates ERR-3".
+There are 165 rules. Each has an ID, so a review comment or an agent can cite one: "violates ERR-3".
 
 ## How to use it
 
@@ -358,7 +364,7 @@ From cheapest to most expensive:
 |---|---|---|
 | Formatter | gofumpt and gci, through `task fmt` | Ready ([config](lint/.golangci.yml)) |
 | Linter | golangci-lint v2 with 41 linters and 2 formatters, including depguard, forbidigo and wsl, plus the standard's own: the `requiredtag` and `wrapgaps` plugins and 18 structural analyzers. `task lint` builds it | Ready ([config](lint/.golangci.yml), plugins: [requiredtag](lint/requiredtag), [wrapgaps](lint/wrapgaps), [analyzers](lint/analyzers)) |
-| Structural checks | The checks golangci-lint's own linters can't express: the layer table, SDK homes, naming bans, the shapes of `main`, services, adapters, repositories, handlers and jobs, kinds, context keys, goroutines, queries, comments and metric names. Analyzers in golangci-lint check one package at a time; `tools/archcheck` checks interfaces, assertions, kinds, binaries, `.env.example`, migrations, the OpenAPI document, handler test files and test tags across the module. Projects keep no `internal/architecture` (TEST-13) | Ready ([analyzers](lint/analyzers), [archcheck](tools/archcheck)) |
+| Structural checks | The checks golangci-lint's own linters can't express: the layer table, SDK homes, naming bans, the shapes of `main`, services, adapters, repositories, handlers and jobs, kinds, context keys, goroutines, queries, comments and metric names. Analyzers in golangci-lint check one package at a time; `tools/archcheck` checks interfaces, assertions, kinds, binaries, `.env.example`, migrations, the OpenAPI document, handler test files, test tags, flow files and their setup, promises, and uncalled test code across the module. Projects keep no `internal/architecture` (TEST-13) | Ready ([analyzers](lint/analyzers), [archcheck](tools/archcheck)) |
 | Compiler | Unexported `stamp` and `eventName` types: only a literal stamp and a constant event name compile | errx does this. A project's `httperr` and `logger` packages do it by following ERR-1 and LOG-1 |
 | Stamp tool | `task stamps` hands out stamps from the clock, and `task stamps:check` fails on a new stamp it didn't hand out, a new repeat, a stamp from the future or a `__STAMP__` left in the code | Ready ([tools/stamps](tools/stamps)) |
 | Project tests | Behaviour that only a running test can show, such as the error body, each route's permission, two tenants, concurrent updates, stable paging and migrating twice. Where a rule's "Enforced by" says "project test", the rule says what the test asserts, and the project writes it. The standard doesn't ship them, because they run against each project's own code and infrastructure | Each project writes them. Shared helpers for some (`pagination.AssertStablePaging`, `AssertConcurrentUpdateConflicts`, the migrate-twice test, conformance suites) are to build |

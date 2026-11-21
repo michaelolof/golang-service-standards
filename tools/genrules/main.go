@@ -84,9 +84,24 @@ func rulesIn(file string) (string, error) {
 
 	var rows []string
 
+	// fence is the run of backticks that opened the code block the line is
+	// in, or "" outside one. An example in a code block, such as a promise
+	// file's table, isn't a rule.
+	fence := ""
+
 	for _, line := range lines {
-		if m := ruleRow.FindStringSubmatch(line); m != nil {
-			rows = append(rows, fmt.Sprintf("| %s | %s |", m[1], m[2]))
+		trimmed := strings.TrimSpace(line)
+		ticks := trimmed[:len(trimmed)-len(strings.TrimLeft(trimmed, "`"))]
+
+		switch {
+		case fence == "" && len(ticks) >= 3:
+			fence = ticks
+		case fence != "" && len(ticks) >= len(fence) && trimmed == ticks:
+			fence = ""
+		case fence == "":
+			if m := ruleRow.FindStringSubmatch(line); m != nil {
+				rows = append(rows, fmt.Sprintf("| %s | %s |", m[1], m[2]))
+			}
 		}
 	}
 

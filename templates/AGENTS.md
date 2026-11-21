@@ -28,9 +28,12 @@ Never type a stamp. Write `__STAMP__` where one belongs, then run `task stamps`,
 for each one. A stamp has no meaning. Never order it, number it, version it, or work it out from
 nearby stamps. To change a stamp, replace it with `__STAMP__` and run `task stamps` again.
 
-New tests follow `.standards/07-testing.md`, in every project. Don't restructure existing tests: they're
-the guardrails during a refactor. Only the engineer lifts that pause, and the project then records it
-below, as TEST-14 says.
+New tests follow `.standards/07-testing.md`, in every project. A flow proves a promise from
+`docs/promises/` (TEST-18). Harness steps do one thing, and flows compose them (TEST-19). Each kind of
+test has its own task: `task test` for unit and handler tests, `task test:integration`, `task test:flows`,
+and `task test:all` for all three on a fresh test stack. Don't restructure existing tests: they're the
+guardrails during a refactor. Only the engineer lifts that pause, and the project then records it below,
+as TEST-14 says.
 
 You can mark work `completed` on your own. Only the engineer marks it `done`, by an explicit
 instruction. When a workstream's last task is `completed`, write its completion document,

@@ -19,19 +19,19 @@ It draws on three sources:
 | COL-1 | Instructions are applied in a fixed priority order. General best practice never overrides the standard. |
 | COL-2 | Every task starts with a brief whose "Completed when" lines are its acceptance criteria. |
 | COL-3 | The agent reads before it writes, then lists ambiguities and proposed cases. The engineer resolves them. |
-| COL-4 | Acceptance tests come first, and the implementer is never their only author. |
+| COL-4 | Acceptance tests come first: the promises a task adds or changes, as flows, then the core and integration tests. The implementer is never their only author. |
 | COL-5 | Task-list work, and any work that adds a package, type, interface, service or table, starts with a plan the engineer approves. |
 | COL-6 | Implement in small steps, each ending green. Change only what the task needs. |
 | COL-7 | Refine against the standard with tests green, then run `task check`. |
 | COL-8 | `completed` means fully implemented, tested, verified when possible, and meeting the requirement. The agent marks it without asking, and reports completed or not completed, with the evidence. Never "should work". |
-| COL-9 | When a workstream's last task is `completed`, the agent writes a completion document straight away, without being asked: a standalone HTML file in `completion/`, written and checked in a browser as COL-22 requires, covering everything it did, why, the impact, code sources, many scenarios, any database change and every transaction used instead of one statement. A small change with no plan or task list entry gets one too. It makes the case for the work honestly, and it must not lie. |
+| COL-9 | When a workstream's last task is `completed`, the agent writes a completion document straight away, without being asked: a standalone HTML file in `completion/`, written and checked in a browser as COL-22 requires, covering everything it did, why, the impact, code sources, many scenarios, any database change, every transaction used instead of one statement, and every broken promise the flows found. A small change with no plan or task list entry gets one too. It makes the case for the work honestly, and it must not lie. |
 | COL-10 | Only the engineer marks a task or a workstream `done`, by an explicit instruction after reviewing it. Review covers four concerns: works, solves the real problem, fits, reads well. |
 | COL-11 | Stop rules: two failed attempts, growing scope, a request that breaks the standard, a scope status that doesn't match what the agent finds, or pressure to skip a step. |
 | COL-12 | Autonomy is granted per task type and earned through measured results. |
 | COL-13 | Every repeated correction becomes a rule, a check, or a canonical example. |
 | COL-14 | Everything written for a person uses clear, approachable language, with a practical example and a code source. |
 | COL-15 | Each project keeps one living `tasklist.md`: a tracker table grouped into phases that each deliver something useful, linked to a section per task. A task can only depend on tasks above it. A dependency in another workstream that isn't `done` yet is a warning, not a blocker. Each scope is marked `greenfield`, `existing` or `unconfirmed`. The engineer sets it when the task list or a task is written, so the agent asks and never assumes, and nothing is planned or changed while it's `unconfirmed`. |
-| COL-16 | Each task being worked on is detailed in an implementation plan, an HTML page in `implementation/`, which the engineer approves before work starts. A plan that adds or changes a write lists each transaction it will use instead of one statement, with its justification and impact. All the work one plan covers is one workstream. |
+| COL-16 | Each task being worked on is detailed in an implementation plan, an HTML page in `implementation/`, which the engineer approves before work starts. A plan that adds or changes a write lists each transaction it will use instead of one statement, with its justification and impact. A plan that changes what a caller sees lists each promise it adds or changes, with the flow that will prove it. All the work one plan covers is one workstream. |
 | COL-17 | Every implementation plan has a table of all the sub-tasks needed to finish it end to end, in the task list's format, with temporary IDs that exist only in that plan. |
 | COL-18 | Only the engineer deletes a proposal, implementation plan or completion document. A finished plan stays in the folder until the engineer explicitly says to delete it. |
 | COL-19 | A workstream goes to the engineer whole, implemented end to end. Never ask for `done` on part of it unless the engineer asked for that. If an item must be `done` before another in the same workstream or phase, ask first. |
@@ -97,12 +97,30 @@ The engineer answers before any code is written. An ambiguity is a decision that
 ## COL-4 · Acceptance tests first
 
 **Rule.**
-- The cases in "Completed when" become tests before the implementation: core tests with fakes for business rules, and integration tests for queries (TEST-1).
+- The cases in "Completed when" become tests before the implementation:
+  1. the promises the task adds or changes become flows (TEST-18), written from the promise, not from the code;
+  2. core tests with fakes for business rules;
+  3. integration tests for queries (TEST-1).
+- The task updates the area's promise file in `docs/promises` in the same change.
 - The engineer writes them, approves the agent's draft, or has a separate spec agent write them. **The agent that implements is never their only author.**
 - The implementer shows the tests failing for the right reason before it starts.
 - The implementer may not change an approved test to make it pass. If a test looks wrong, it stops and says which test and why (COL-11).
 
-**Why.** A test written after the code, by whoever wrote the code, checks what the code does, not what it should do. *The Clean Coder* calls these tests "defense" (ch 5) and requires that "the developer who writes the test is not the same as the developer who implements" (ch 7). An agent editing a failing assertion until it passes is the same failure in a few seconds.
+**Why.**
+- A test written after the code, by whoever wrote the code, checks what the code does, not what it should do. *The Clean Coder* calls these tests "defense" (ch 5) and requires that "the developer who writes the test is not the same as the developer who implements" (ch 7). An agent editing a failing assertion until it passes is the same failure in a few seconds.
+- This rule used to name only core tests and integration tests, so no acceptance test acted as a caller. In one service, about 3,800 tests passed while an approved business couldn't open an account. Its flows, rebuilt from written promises, found three broken promises in their first pass (TEST-18).
+
+**Don't.** A flow written after the code, with its expected message copied from what the code answered. It holds the answer in place, whatever the promise says:
+
+```go
+require.Equal(t, "the provider refused the payment", testharness.Refusal(t, resp).Message) // what the code returned
+```
+
+**Do.** Start from the promise. The task adds the row to `docs/promises/orders.md`, and the flow written from it fails for the right reason before the implementation exists:
+
+```markdown
+| ORD-5 | A cancelled order is refunded in full, and the app is told `ORDER_REFUNDED`. | person, business | an order that has shipped: 409 "order {id} has shipped, so it can't be cancelled" | `TestOrder_ACancelledOrderIsRefundedInFull` |
+```
 
 ## COL-5 · Plan before structure
 
@@ -190,6 +208,7 @@ It covers everything that was implemented, not just the highlights. It's written
 | What was done | Everything that changed, with links to the code. |
 | Database | Everything that changed in what's stored, with the schema and the explanation. See below. Write "None" if nothing stored changed. |
 | Transactions | Every transaction used instead of one statement in the code the workstream touched, and every one it removed. See below. Write "None" if there are none. |
+| Promises | Each promise the work added or changed, with the flow that proves it. Every broken promise the flows found: what was fixed, and what waits for a decision, with the decision it waits for (TEST-18). Write "None" if nothing a caller sees changed. |
 | What led to it | The problem, what was found in the code, and how that led to this implementation. |
 | Justification | Each decision, the options not chosen and why, and anything that differs from the plan. |
 | Impact | What changes, and for whom: callers, data, other code, operations. What stays the same. Breaking changes, risks and known limits. |
@@ -763,6 +782,7 @@ A plan written in Markdown before COL-22 stays as it is, unless the engineer ask
 | Keeping what exists working | Only for a scope marked `existing` (COL-15): how data moves, what callers must change, the order of the deploy, and the way back. |
 | Decisions | Each choice: the options, the one taken and why. Open ones are the engineer's to answer (COL-3). |
 | Transactions | Only for a plan that adds or changes a write: each transaction it will use instead of one statement, with the use case, the justification and the impact. See below. |
+| Promises | Only for a plan that changes what a caller sees: each promise it adds or changes, from the API description, the feature document or the design, with the flow that will prove it (TEST-18). |
 | Sub-task sections | One section per row of the table, in the same order (COL-17). |
 | Risks | What could go wrong, and what we'd do about it. |
 | Out of scope | What this plan won't do, and where that work goes instead. |
@@ -815,6 +835,7 @@ A plan that covers several tasks is finished when the engineer has marked the la
 - a plan for a scope that's still `unconfirmed`;
 - a plan whose tasks are all `done`, but whose header doesn't say so;
 - a plan that adds or changes a write, with a transaction it doesn't list, or an entry without its justification or impact;
+- a plan that changes what a caller sees, without the promises it adds or changes;
 - a plan that fails COL-14's three tests, or COL-22's checks.
 
 ## COL-17 · The plan's sub-task table

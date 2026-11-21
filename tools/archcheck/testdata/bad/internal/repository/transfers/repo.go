@@ -2,6 +2,8 @@
 package transfers
 
 import (
+	"context"
+
 	"example.com/bad/internal/domain"
 	"example.com/bad/internal/foundation/errkinds"
 	"github.com/michaelolof/errx"
@@ -21,3 +23,9 @@ func (r *Repo) Get(id [16]byte) (domain.Transfer, error) {
 
 	return domain.Transfer{}, errx.NewKind(0, errkinds.ErrKindConflict, "taken")
 }
+
+// MarkSettled writes a transfer's status.
+func (r *Repo) MarkSettled(ctx context.Context, id [16]byte) error { return nil }
+
+// GetSettled only reads.
+func (r *Repo) GetSettled(ctx context.Context, id [16]byte) (bool, error) { return false, nil }

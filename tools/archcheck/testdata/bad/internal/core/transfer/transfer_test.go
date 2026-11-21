@@ -5,3 +5,6 @@ type fakeNotifier struct{}
 func (fakeNotifier) Notify(Transfer) error { return nil }
 
 var _ Notifier = fakeNotifier{}
+
+// newUnusedFixture is test code nothing calls.
+func newUnusedFixture() fakeNotifier { return fakeNotifier{} }

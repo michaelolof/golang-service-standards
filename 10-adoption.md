@@ -35,7 +35,13 @@ task setup
 git add -A && git commit -m "Pin standards v0.1.0"
 ```
 
-[templates/Taskfile.yml](templates/Taskfile.yml) has `check` and `check:fast`, because the hooks and CI call them, and `vuln`, because `check` runs it. If the project already has a Taskfile, copy those three tasks, the `vars` and the `includes` into it. Without them, every hook fails with `Task "check:fast" does not exist` (tested). The template also has `test:up`, `test:down`, `test:integration` and `test:contract`, which mean the same in every project (TEST-3, TEST-17). Copy them too, or check that the project's own tasks of those names do the same.
+[templates/Taskfile.yml](templates/Taskfile.yml) has `check` and `check:fast`, because the hooks and CI call them, and `vuln` and `test:build`, because `check` runs them. If the project already has a Taskfile, copy those four tasks, the `vars` and the `includes` into it. Without them, every hook fails with `Task "check:fast" does not exist` (tested). The template also has the test tasks, which mean the same in every project: `test:up`, `test:down`, `test:integration`, `test:flows`, `test:all`, `test:build` and `test:contract` (TEST-1, TEST-3, TEST-17). Each runs only its own kind of test, and `check` depends on `test:build`. Copy them too, or check that the project's own tasks of those names do the same.
+
+**Editors need every kind's tag.** An editor that isn't given the tags reports every tagged file as outside the build, and checks none of it. For VS Code, add this to the workspace settings:
+
+```json
+"gopls": {"build.buildFlags": ["-tags=integration,flow,contract,perf"]}
+```
 
 The result in a project:
 
@@ -201,7 +207,7 @@ Rules that no check can cover are checked in review (COL-10). A rule that keeps 
 1. Add the standard ([ADO-1](#ado-1--add-the-standard-to-a-project)).
 2. Review `AGENTS.old.md`, any `CLAUDE.md`, and any `AGENTS.md` in a subfolder ([ADO-3](#ado-3--one-agentsmd-at-the-root-of-each-code-repo)), so agents stop following instructions that contradict the standard. Do this first.
 3. Run `task check`, and turn what fails into task-list items (COL-15).
-4. Fix the code. Existing tests stay as they are and must keep passing (TEST-14). Test files aren't linted. archcheck may ask for a handler test file, which is a new test, or a build line on a test file. Neither changes what an existing test asserts.
+4. Fix the code. Existing tests stay as they are and must keep passing (TEST-14). Test files aren't linted. archcheck may ask for a handler test file, which is a new test, a build line or a file name on a test file, a flow file's function moved into the harness, or an uncalled test function deleted. None of these changes what an existing test asserts.
 5. Make `task check` a required check once it passes.
 
 New feature work waits until step 5. New tests follow [07](07-testing.md) from the start, in every project (TEST-14).
@@ -218,14 +224,18 @@ Restructuring existing tests is paused until the engineer lifts the pause for th
    - tests of the whole app that sit beside handlers and job handlers.
 2. **Tooling.** The test linters run over test files (TEST-13).
 3. **Mechanical changes,** which a linter or a script makes: tags and file names (TEST-1), no skips (TEST-2), `require` only (TEST-4), and `package x_test`.
-4. **Changes made by reading:** fakes into the three levels, with their conformance suites (TEST-6); helpers (TEST-9); names and tables (TEST-7); and the per-layer recipes (TEST-11, TEST-15).
-5. **Flows, one capability at a time,** starting with a pilot.
-   - Each flow either stays, because it needs several real parts (TEST-16), or moves down to a unit or handler test.
-   - Every removed test names its cover in a ledger: one row per test, with the test that covers its behaviour now.
-   - At the end, no test from the starting list is without a fate.
+4. **Changes made by reading:** fakes into the three levels, with their conformance suites (TEST-6); helpers (TEST-9, TEST-19); names and tables (TEST-7); and the per-layer recipes (TEST-11, TEST-15).
+   - Give each shared fake production's set-up, with its parity test (TEST-6).
+   - Then fix each test that meets a rule it used to skip, by stating what it needs, such as an approved customer of a named kind.
+5. **Flows, one area at a time,** starting with a pilot.
+   1. Write the area's promise file first, from the API description and the feature documents (TEST-18). Don't write it from the existing flows.
+   2. Give each existing flow a fate. It's rewritten to prove a promise as the caller (TEST-16). Or it moves beside its job handler or repository, because no caller can reach what it tests. Or it moves down to a unit or handler test.
+   3. Every promise that has no flow gets one.
+   4. Every removed test names its cover in a ledger: one row per test, with the test that covers its behaviour now.
+   5. At the end, no "Not yet proved as the caller" section is left, no test from the starting list is without a fate, and the promise check passes.
 6. **Evidence.**
    - Run the counting script again, and compare it with the first run.
-   - Run the full integration suite three times in a row, each on a fresh stack (`task test:down` first).
+   - Run `task test:all` three times in a row. It starts each run on a fresh stack.
    - Check that no test database is left behind.
 
 [07](07-testing.md) shows what one service counted before and after.
@@ -307,6 +317,45 @@ What the new checks found on three codebases before release:
 
 None of the three had a contract test outside `test/contract`. archcheck's other checks found nothing on any of them.
 
+### Upgrading to the release with promises and the flow tag
+
+This release makes the tests prove the product, not the code. It adds two mandatory rules, TEST-18 and TEST-19, rewrites TEST-16 around the caller, and changes a build tag, so it ships in the next minor version.
+
+**A project's flows stop building under `integration` once it upgrades.** They move to their own tag, `flow`, and their own task, `task test:flows`. Anything that ran flows with `-tags integration`, such as a CI job, runs `task test:flows` instead.
+
+What changes for an existing project:
+- **Flows have the `flow` tag,** and a flow package's `TestMain` is in `main_test.go` (TEST-1).
+- **The test tasks change.** `task test:integration` runs only the packages that have integration tests, and no flows. `task test:flows`, `task test:all` and `task test:build` are new, and `task check` runs `test:build` (TEST-1).
+- **Every promise to a caller is written down,** in `docs/promises/<area>.md`, and a flow proves each one (TEST-18).
+- **A flow acts as the caller:** it signs in as a caller can, goes through the production servers, and sets up through the API, the queued jobs and the vendor mock (TEST-16).
+- **A test helper does one thing,** in the one home for its kind. Flow files hold only tests, and no test function is left uncalled (TEST-19).
+- **A shared fake starts the way production is set up,** with a parity test beside the real implementation (TEST-6).
+- **archcheck has four new checks,** and a stricter one: flow files hold only tests, flows and the harness set up only through boundaries, the promises agree with the flows and the API description, and no test function is uncalled. The tag check now covers the `flow` tag, the file names in `test/flows`, and the `integration` tag on `_integration_test.go` files. archcheck loads every kind's tag, so a tagged test that doesn't compile stops it.
+
+In the upgrade PR, do these in this order. Each one is a fix under TEST-14, because none of them changes what a test asserts:
+1. Tag `test/flows` with `flow`, and rename each flow package's `main_integration_test.go` to `main_test.go`.
+2. Replace the test tasks with the template's, and add `test:build` to `check`'s deps. Give the editor every kind's tag ([ADO-1](#ado-1--add-the-standard-to-a-project)).
+3. Move every function out of the flow files into the harness, unchanged.
+4. Delete every test function nothing calls.
+5. Write `docs/promises/`, from [templates/promises.md](templates/promises.md). Under the pause, list each flow that doesn't yet act as the caller under "Not yet proved as the caller". The promise check and the setup check accept those flows, and the harness code only they reach, until the lift.
+6. Delete any guard or promise check of the project's own, because archcheck now runs it (TEST-13).
+
+Then run `task check`. A finding that's left is in code a new flow uses, or in a flow no promise file lists. If the fixes are more than the upgrade PR can hold, stay on the old version and plan them as task-list items (ADO-6), as with the structural checks above.
+
+What archcheck found on three codebases before release. The first column is the reference, which has lifted TEST-14. The other two haven't:
+
+| Finding | A CockroachDB service | A MongoDB service | A ScyllaDB service |
+|---|---|---|---|
+| Files in `test/flows` without the `flow` tag | 40 | 53 | 7 |
+| Flow `TestMain` files named `main_integration_test.go` | 13 | 10 | 3 |
+| Other tag findings | 0 | 1: a load test in `test/perf` with the `integration` tag | 0 |
+| Functions declared in flow files | 18, in 7 files | 75, in 22 files | 7, in 2 files |
+| Setup outside the boundaries | 3: the first admin is seeded outside `bootstrap.go`, with a seed package and a repository write, and one flow reads a table with SQL | 60, in 23 files: 45 lines in flows that call the database driver, 9 repository writes, 3 fakes in place of the vendor mock, 2 writes from the harness to the database, and 1 seed package | 0 |
+| Test functions nothing calls | 0. It had removed 25 before the release | 19, in 6 packages | 11, in 4 packages |
+| Promises | no `docs/promises` yet: its promise tables live in a separate documents repository | no `docs/promises` | no `docs/promises` |
+
+Each codebase also keeps the findings it had before. archcheck's run took 2 to 4 seconds on each, and up to 4 GB of memory, because the uncalled-code check builds the call graph of every test binary.
+
 ## What's built and what isn't
 
 | Part | Status |
@@ -316,5 +365,7 @@ None of the three had a contract test outside `test/contract`. archcheck's other
 | `task stamps` and `task stamps:check` | Done, and tested from `.standards/` on a clone of one project, and from the standard on two more |
 | Templates (`AGENTS.md`, `Taskfile.yml`, `claude-settings.json`), hooks, `standards:check` | Done, and tested |
 | The standard's first version tag | Done: `v0.1.0` |
-| Structural checks: the analyzers in `lint/analyzers`, including `constquery`, `repoverbs` and `txshape`, and `tools/archcheck`, including its checks of handler test files and test tags (TEST-13) | Done, each with fixtures, and run on three codebases before release. A project keeps no `internal/architecture` and no `arch` task. |
+| Structural checks: the analyzers in `lint/analyzers`, including `constquery`, `repoverbs` and `txshape`, and `tools/archcheck`, including its checks of handler test files, each kind's tag and home, flow files, flow setup, promises and uncalled test code (TEST-13) | Done, each with fixtures, and run on three codebases before release. A project keeps no `internal/architecture`, no `arch` task, and no guard or promise check of its own. |
+| `tools/testpackages`, which lists the packages that have one kind of test, for `task test:integration` (TEST-1) | Done, with a test over a fixture module, and checked against the reference's own script: the same 56 packages |
+| `templates/promises.md`, the shape of a promise file (TEST-18) | Done. archcheck's tests read it as the check reads a promise file |
 | Shared test helpers (`testharness`, `apitest`, `pagination.AssertStablePaging`, `testutils.AssertConcurrentUpdateConflicts`, the migrate-twice test, conformance suites) | To build. A project writes its own until then, from the descriptions in [07](07-testing.md) and [06](06-persistence.md). |

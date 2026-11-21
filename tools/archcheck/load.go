@@ -19,7 +19,14 @@ type module struct {
 	code []*packages.Package
 	// all adds every test variant, so a fake in a test counts as an implementation.
 	all []*packages.Package
+	// loaded adds the generated main of each test binary, where the call graph
+	// of the test code starts.
+	loaded []*packages.Package
 }
+
+// testTags are the build tags of every kind of test in the module (TEST-1), as
+// task test:build vets them. An e2e suite is its own module.
+const testTags = "integration,flow,contract,perf"
 
 // checks run in this order. Each returns its problems.
 var checks = []func(*module) ([]problem, error){
@@ -28,6 +35,10 @@ var checks = []func(*module) ([]problem, error){
 	checkEnvExample,
 	checkMigrations,
 	checkTestHomes,
+	checkFlowFiles,
+	checkFlowSetup,
+	checkPromises,
+	checkUncalledTestCode,
 	checkOpenAPI,
 	checkHandlerTests,
 	checkBinaries,
@@ -65,7 +76,9 @@ func check(root string) ([]problem, error) {
 }
 
 // load reads the module path from go.mod and type-checks every package, with
-// its tests and the integration tag the lint config also builds with (TEST-1).
+// its tests and every kind's tag (TEST-1). It keeps the syntax of every
+// dependency too, because the call graph of the test code goes through them,
+// such as the testing package calling each test.
 func load(root string) (*module, error) {
 	data, err := os.ReadFile(filepath.Join(root, "go.mod"))
 	if err != nil {
@@ -77,19 +90,17 @@ func load(root string) (*module, error) {
 		return nil, errors.New("go.mod has no module line")
 	}
 
-	cfg := &packages.Config{
-		Dir:        root,
-		Mode:       packages.NeedName | packages.NeedFiles | packages.NeedImports | packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo,
-		Tests:      true,
-		BuildFlags: []string{"-tags=integration"},
-	}
+	const mode = packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedImports | packages.NeedDeps |
+		packages.NeedTypes | packages.NeedTypesSizes | packages.NeedSyntax | packages.NeedTypesInfo
+
+	cfg := &packages.Config{Dir: root, Mode: mode, Tests: true, BuildFlags: []string{"-tags=" + testTags}}
 
 	pkgs, err := packages.Load(cfg, "./...")
 	if err != nil {
 		return nil, fmt.Errorf("load the module: %w", err)
 	}
 
-	m := &module{root: root, path: path}
+	m := &module{root: root, path: path, loaded: pkgs}
 
 	var broken []string
 

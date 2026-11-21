@@ -126,23 +126,25 @@ Generated from the "Rules at a glance" tables. Don't edit it by hand. Each docum
 
 | ID | Rule |
 |---|---|
-| TEST-1 | Each kind of test has one home, one build tag and one recipe. A test with no tag uses no infrastructure. Each behaviour is tested once, at the lowest layer where it is real. |
+| TEST-1 | Each kind of test has one home, one build tag, one recipe and one task, and no task runs another kind's tests. A test with no tag uses no infrastructure. Each behaviour is tested once, at the lowest layer where it is real. A promise to a caller is the one exception: a flow proves it too. |
 | TEST-2 | Under its tag, missing infrastructure fails the test; it never skips. Nothing is gated by `testing.Short()` or environment variables. |
 | TEST-3 | Run one test stack through Task. Each integration package gets its own database, and each test its own tenant. Never reset or flush global state. |
 | TEST-4 | Use testify `require` only, and compare whole values. Assert an error's kind, and its text only when a person reads it. |
 | TEST-5 | Test doubles are hand-written fakes named `fake…`. They are small working implementations that never embed the interface. No test writes its own double for something a shared fake stands in for. |
-| TEST-6 | Shared fakes come in three levels: boundary fakes, repository fakes and capability builders. Each boundary and repository fake passes the same conformance suite as the real implementation. |
+| TEST-6 | Shared fakes come in three levels: boundary fakes, repository fakes and capability builders. Each boundary and repository fake passes the same conformance suite as the real implementation. A shared fake starts set up the way production is, and a parity test beside the real implementation fails when they differ. |
 | TEST-7 | Tables are for three or more data-only cases. Rows hold no functions and the loop body has no branches. Names say what the application does. |
 | TEST-8 | `t.Parallel()` is optional. Use it where a test shares nothing. |
 | TEST-9 | Helpers take `tb testing.TB`, call `tb.Helper()`, fail with `require`, use `tb.Context()` and register `tb.Cleanup`. |
 | TEST-10 | Builders return valid values with fixed IDs and times. `testdata/` holds no Go code. |
 | TEST-11 | Each layer has one testing recipe. |
 | TEST-12 | Time, IDs and randomness are injected. Use `synctest` inside a process. Polling across processes must fail on timeout. |
-| TEST-13 | Projects keep no `internal/architecture`. The standard's analyzers and `tools/archcheck` hold the structural checks, and each proves with fixtures that it reads code. Test code stays in tests. |
+| TEST-13 | Projects keep no `internal/architecture`, and no guard or check of their own. The standard's analyzers and `tools/archcheck` hold the structural checks, and each proves with fixtures that it reads code. Test code stays in tests. |
 | TEST-14 | New tests follow these testing rules in every project. Restructuring existing tests is paused until the engineer lifts the pause for the project. Until then, existing tests stay as they are, as the guardrails. |
 | TEST-15 | Every handler has a test file beside it. Requests go through the production route table and its auth to the real service over fakes. |
-| TEST-16 | A flow tests only what needs several real parts together. One harness builds the whole app per test. A test sets up through real boundaries, makes one call, and asserts. |
+| TEST-16 | A flow proves one promise as its caller meets it. It signs in as a caller can, goes through the production servers, and sets up through the API, the queued jobs and the vendor mock. It states every choice, and checks only what the caller sees. |
 | TEST-17 | Adapters are tested against an in-process vendor mock that enforces the vendor's documented contract. A contract test, run by hand, checks the vendor itself. |
+| TEST-18 | Every promise to a caller is written down, and a flow proves each one. A test's expected values come from the product, never from the code under test. A test that disagrees with the code is a finding. |
+| TEST-19 | Every shared test helper does one thing. Tests compose them. A test never has its own copy of a step, a body, a reader or a check, and no test function is left uncalled. |
 
 ## [08 · Security](08-security.md)
 
@@ -183,19 +185,19 @@ Generated from the "Rules at a glance" tables. Don't edit it by hand. Each docum
 | COL-1 | Instructions are applied in a fixed priority order. General best practice never overrides the standard. |
 | COL-2 | Every task starts with a brief whose "Completed when" lines are its acceptance criteria. |
 | COL-3 | The agent reads before it writes, then lists ambiguities and proposed cases. The engineer resolves them. |
-| COL-4 | Acceptance tests come first, and the implementer is never their only author. |
+| COL-4 | Acceptance tests come first: the promises a task adds or changes, as flows, then the core and integration tests. The implementer is never their only author. |
 | COL-5 | Task-list work, and any work that adds a package, type, interface, service or table, starts with a plan the engineer approves. |
 | COL-6 | Implement in small steps, each ending green. Change only what the task needs. |
 | COL-7 | Refine against the standard with tests green, then run `task check`. |
 | COL-8 | `completed` means fully implemented, tested, verified when possible, and meeting the requirement. The agent marks it without asking, and reports completed or not completed, with the evidence. Never "should work". |
-| COL-9 | When a workstream's last task is `completed`, the agent writes a completion document straight away, without being asked: a standalone HTML file in `completion/`, written and checked in a browser as COL-22 requires, covering everything it did, why, the impact, code sources, many scenarios, any database change and every transaction used instead of one statement. A small change with no plan or task list entry gets one too. It makes the case for the work honestly, and it must not lie. |
+| COL-9 | When a workstream's last task is `completed`, the agent writes a completion document straight away, without being asked: a standalone HTML file in `completion/`, written and checked in a browser as COL-22 requires, covering everything it did, why, the impact, code sources, many scenarios, any database change, every transaction used instead of one statement, and every broken promise the flows found. A small change with no plan or task list entry gets one too. It makes the case for the work honestly, and it must not lie. |
 | COL-10 | Only the engineer marks a task or a workstream `done`, by an explicit instruction after reviewing it. Review covers four concerns: works, solves the real problem, fits, reads well. |
 | COL-11 | Stop rules: two failed attempts, growing scope, a request that breaks the standard, a scope status that doesn't match what the agent finds, or pressure to skip a step. |
 | COL-12 | Autonomy is granted per task type and earned through measured results. |
 | COL-13 | Every repeated correction becomes a rule, a check, or a canonical example. |
 | COL-14 | Everything written for a person uses clear, approachable language, with a practical example and a code source. |
 | COL-15 | Each project keeps one living `tasklist.md`: a tracker table grouped into phases that each deliver something useful, linked to a section per task. A task can only depend on tasks above it. A dependency in another workstream that isn't `done` yet is a warning, not a blocker. Each scope is marked `greenfield`, `existing` or `unconfirmed`. The engineer sets it when the task list or a task is written, so the agent asks and never assumes, and nothing is planned or changed while it's `unconfirmed`. |
-| COL-16 | Each task being worked on is detailed in an implementation plan, an HTML page in `implementation/`, which the engineer approves before work starts. A plan that adds or changes a write lists each transaction it will use instead of one statement, with its justification and impact. All the work one plan covers is one workstream. |
+| COL-16 | Each task being worked on is detailed in an implementation plan, an HTML page in `implementation/`, which the engineer approves before work starts. A plan that adds or changes a write lists each transaction it will use instead of one statement, with its justification and impact. A plan that changes what a caller sees lists each promise it adds or changes, with the flow that will prove it. All the work one plan covers is one workstream. |
 | COL-17 | Every implementation plan has a table of all the sub-tasks needed to finish it end to end, in the task list's format, with temporary IDs that exist only in that plan. |
 | COL-18 | Only the engineer deletes a proposal, implementation plan or completion document. A finished plan stays in the folder until the engineer explicitly says to delete it. |
 | COL-19 | A workstream goes to the engineer whole, implemented end to end. Never ask for `done` on part of it unless the engineer asked for that. If an item must be `done` before another in the same workstream or phase, ask first. |
