@@ -21,7 +21,7 @@ func (w *World) Pool() *pgxpool.Pool { return w.pool }
 
 // CreateOrder writes the order's row, where a flow places it through the API.
 func (w *World) CreateOrder() {
-	_, _ = w.pool.Exec(w.tb.Context(), "INSERT INTO orders (id) VALUES ($1)", 1)
+	_, _ = w.pool.Exec(w.tb.Context(), "INSERT\n\tINTO orders (id) VALUES ($1)", 1)
 }
 
 // CountOrders is a reader nothing calls.

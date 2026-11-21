@@ -3,9 +3,13 @@ package main
 import (
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/go/packages"
@@ -22,6 +26,49 @@ type module struct {
 	// loaded adds the generated main of each test binary, where the call graph
 	// of the test code starts.
 	loaded []*packages.Package
+
+	ignoredOnce sync.Once
+	ignored     []ignoredFile
+
+	// ignoreDirs are go.mod's ignore directives: folders the go command leaves
+	// out of ./..., such as ./node_modules.
+	ignoreDirs []string
+}
+
+// ignoredFile is a Go file of the module that this machine's build leaves out,
+// such as a _windows_test.go file on Linux, read for its syntax only.
+type ignoredFile struct {
+	fset *token.FileSet
+	file *ast.File
+	rel  string
+}
+
+// ignoredFiles returns the module's Go files that the build leaves out on this
+// machine. The checks that read names, such as which tests exist, read them
+// too, so a finding doesn't depend on the machine it runs on. One that can't
+// be parsed is left out.
+func (m *module) ignoredFiles() []ignoredFile {
+	m.ignoredOnce.Do(func() {
+		fset := token.NewFileSet()
+		seen := map[string]bool{}
+
+		for _, p := range m.all {
+			for _, path := range p.IgnoredFiles {
+				if seen[path] || !strings.HasSuffix(path, ".go") {
+					continue
+				}
+
+				seen[path] = true
+
+				file, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
+				if err == nil {
+					m.ignored = append(m.ignored, ignoredFile{fset: fset, file: file, rel: m.rel(path)})
+				}
+			}
+		}
+	})
+
+	return m.ignored
 }
 
 // testTags are the build tags of every kind of test in the module (TEST-1), as
@@ -90,6 +137,14 @@ func load(root string) (*module, error) {
 		return nil, errors.New("go.mod has no module line")
 	}
 
+	var ignoreDirs []string
+
+	if mf, err := modfile.ParseLax("go.mod", data, nil); err == nil {
+		for _, ig := range mf.Ignore {
+			ignoreDirs = append(ignoreDirs, ig.Path)
+		}
+	}
+
 	const mode = packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedImports | packages.NeedDeps |
 		packages.NeedTypes | packages.NeedTypesSizes | packages.NeedSyntax | packages.NeedTypesInfo
 
@@ -100,15 +155,24 @@ func load(root string) (*module, error) {
 		return nil, fmt.Errorf("load the module: %w", err)
 	}
 
-	m := &module{root: root, path: path, loaded: pkgs}
+	m := &module{root: root, path: path, loaded: pkgs, ignoreDirs: ignoreDirs}
 
+	// A package whose dependency doesn't build is ill-typed too, though it
+	// reports no error of its own, so every package in the graph is read.
 	var broken []string
 
-	for _, p := range pkgs {
-		for _, e := range p.Errors {
-			broken = append(broken, e.Error())
-		}
+	seen := map[string]bool{}
 
+	packages.Visit(pkgs, nil, func(p *packages.Package) {
+		for _, e := range p.Errors {
+			if msg := e.Error(); !seen[msg] {
+				seen[msg] = true
+				broken = append(broken, msg)
+			}
+		}
+	})
+
+	for _, p := range pkgs {
 		if strings.HasSuffix(p.ID, ".test") {
 			continue // the generated test main
 		}

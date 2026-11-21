@@ -2,6 +2,8 @@ module example.com/good
 
 go 1.26
 
+ignore ./tools/vendored
+
 require (
 	github.com/jackc/pgx/v5 v5.0.0
 	github.com/michaelolof/errx v0.0.0

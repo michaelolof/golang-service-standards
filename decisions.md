@@ -19,7 +19,7 @@ These haven't been decided, and nothing enforces them yet.
 | How do projects consume it, and how is it mandatory for agents? | A pinned `git subtree` copy, an `AGENTS.md` that `task check` protects, hooks and required CI ([10-adoption.md](10-adoption.md)). |
 | Can a subfolder have its own `AGENTS.md`? | Yes, if a team wants one. `task check` doesn't look at it, so it's checked in review (ADO-3). |
 | Can a `CLAUDE.md` hold its own text? | No. It's only the line `@AGENTS.md`, or a symlink to `AGENTS.md`, so there's one set of instructions (ADO-3). |
-| How strict are we on existing projects? | Fix everything first, leaving existing tests as they are (ADO-6, TEST-14). |
+| How strict are we on existing projects? | Fix everything first, tests included (ADO-6, TEST-14). |
 | Who owns the standard? | Michael Olofinjana (COL-13). |
 | What's the difference between `completed` and `done`? | `completed` means fully implemented, tested, verified when possible, and meeting the requirement, and the agent marks it. `done` only comes from the engineer, by an explicit instruction, after reviewing a completion document. Neither depends on merging (COL-8, COL-9, COL-10). |
 | How much work goes for review at once? | A whole workstream, implemented end to end, unless the engineer explicitly asks for part of it. A small change with no plan or task list entry gets a completion document for visibility, with no `done` step (COL-5, COL-9, COL-19). |
@@ -47,8 +47,8 @@ These haven't been decided, and nothing enforces them yet.
 | How does a check prove it reads code? | Its fixtures: each analyzer has at least one case it reports and one it doesn't, and archcheck has a module where every check fires and one where none does. No check counts what it read (TEST-13). |
 | Do two checks ever cover the same thing? | No. Where depguard, forbidigo or revive checks part of a rule, the analyzer leaves that part alone, and the rule's table names both. |
 | Are the new checks warnings first? | No. Everything is on from the release. A project fixes each finding or records the exception at the site, and stays on the old version until its upgrade passes (ADO-6, ADO-7). |
-| Are test files checked? | Partly. archcheck loads every kind's tag and checks: each handler file has its test file (TEST-15); each kind's tag and home, the `integration` tag on exactly the `_integration_test.go` files, and the file names in `test/flows` (TEST-1); flow files hold only tests, and no test function is left uncalled (TEST-19); flows and the harness set up only through boundaries (TEST-16); and the promises, the flows and the API description agree (TEST-18). The lint config skips test files while restructuring is paused, so TEST-5, TEST-7 and TEST-10 are for review (TEST-13). |
-| Does fixing archcheck's findings on tests break the pause? | No. A missing handler test file is a new test, and a tag fix changes when a test builds, not what it asserts. So are moving a flow file's function into the harness unchanged, renaming a flow's `TestMain` file, and deleting an uncalled test function (TEST-14). |
+| Are test files checked? | Partly. archcheck loads every kind's tag and checks: each handler file has its test file (TEST-15); each kind's tag and home, the `integration` tag on exactly the `_integration_test.go` files, and the file names in `test/flows` (TEST-1); flow files hold only tests, and no test function is left uncalled (TEST-19); flows and the harness set up only through boundaries (TEST-16); and the promises, the flows and the API description agree (TEST-18). Lint reads test files too, with every kind's tag. TEST-5, TEST-7 and TEST-10's `testdata` rule are for review, because no linter can judge them (TEST-13). |
+| Is a finding on a test fixed like any other? | Yes. Lint and archcheck read every test, and each finding is fixed. Bringing a test up to 07 is its own change, never part of a refactor of the code it tests (TEST-14). |
 | Who owns gofi's and enumx's conventions? | The libraries. `gofihandlers` checks gofi's GUIDELINES.md and `enums` follows enumx's declaration style; both live in `lint/analyzers` until the libraries publish their own (HTTP-1, DOM-6). |
 | Does archcheck report a variable `.env.example` lists that no tag reads? | No. The file also lists variables for docker compose, and for SDKs that read the environment themselves, and a line in it has nowhere to record why. archcheck checks the other direction, every tagged variable listed, and review checks this one (LAY-13). |
 | What does "project test" mean in an "Enforced by" column? | A test the project writes, of behaviour only a running test can show, such as the error body or two tenants. The rule says what it asserts. The column used to say "shared test" or "server test", which promised helpers the standard doesn't ship. Shared helpers for some are still to build (10-adoption). |
@@ -160,8 +160,8 @@ These haven't been decided, and nothing enforces them yet.
 
 | Question | Decision |
 |---|---|
-| Do we restructure existing tests? | Not until the engineer lifts the pause for the project. The project records the lift in its `AGENTS.md` and follows 10-adoption's recipe. Until then, existing tests are the guardrails during refactors (TEST-14). `t.Parallel()` is optional (TEST-8). |
-| Which style do new tests follow? | This chapter, in every project. "The style already in their package" kept old patterns spreading in every project under the pause (TEST-14). |
+| Do we restructure existing tests? | Yes. Every test follows 07, existing ones included, through 10-adoption's recipe. A refactor changes a test only enough to compile, so the tests still show the behaviour stayed the same (TEST-14). `t.Parallel()` is optional (TEST-8). |
+| Which style do new tests follow? | This chapter, like every test. "The style already in their package" kept old patterns spreading (TEST-14). |
 | `require` or `assert`? | `require` only, for every new test. |
 | How do table tests name an error kind? | A separate table per kind, for every new test. |
 | How is test infrastructure started? | docker compose through `task test:up` (TEST-3). |
@@ -178,7 +178,7 @@ These haven't been decided, and nothing enforces them yet.
 | How big is a test helper, and where does it live? | It does one thing, in the one home for its kind. Flow files hold tests only (TEST-19). |
 | Why do flows have their own tag? | So each kind of test runs on its own. With one tag for both, no command could run integration tests without flows (TEST-1). |
 | How is a shared fake set up? | The way production is: the capabilities, requirements and limits the real implementation declares, with the settings that ship. A parity test beside the real implementation fails when they differ. A test that needs something else changes the fake in its own body (TEST-6). |
-| How do the checks on flows work under the pause? | The promise check and the setup check accept the flows a promise file lists under "Not yet proved as the caller", and the harness code only they reach. Every other test, and the code it reaches, is checked in full. Without that, a project under the pause couldn't pass `task check` until it lifted the pause, because rewriting an old flow is restructuring (TEST-14). |
+| Is there a pause on restructuring existing tests? | No. TEST-14 used to pause it until the engineer lifted the pause per project. No project is paused, so the pause is gone: every project brings its tests to 07, lint reads test files, and archcheck takes no exception for an existing test (TEST-14). |
 | Where is miniredis allowed? | Anywhere. |
 
 ## Deliberately not in the standard

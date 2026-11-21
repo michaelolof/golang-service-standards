@@ -11,9 +11,3 @@
 ## Not reachable from outside
 
 - **`FAILED`.** The provider never refuses a payment for good once it has accepted it, so no caller can reach this status. Its rule is a core test: `TestChargeOrder_MarksTheOrderFailedWhenTheProviderRefusesForGood`.
-
-## Not yet proved as the caller
-
-Only while TEST-14's pause holds. Delete this section otherwise. One entry per existing flow that doesn't act as a caller yet: the promise, the flow, and what it does that a caller can't. The lift empties it. For example, if ORD-1's flow still seeded its customer:
-
-- **ORD-1.** `TestOrder_EachKindOfCustomerPlacesAnOrderAndPaysIt` seeds its customer straight into the table, always as a person, where the tenant's app verifies one through the API.

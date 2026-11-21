@@ -8,10 +8,7 @@
 |---|---|---|---|---|
 | ORD-1 | An operator sees an order the tenant's app placed. | — | — | `TestPlaceOrder_AnOperatorSeesTheOrder` |
 
-## Not reachable from outside
+## Not reachable from outside ##
 
-- **A read-only key cancelling an order.** No key a caller can be issued today may read without writing, so no caller can reach this refusal. Its handler test covers it: `TestCancelOrderHandler_RefusesAKeyThatMayOnlyRead`.
-
-## Not yet proved as the caller
-
-- **ORD-1.** `TestPlaceOrder_AnOperatorSeesTheOrder` seeds its orders straight into the table, where the tenant's app places them through the API. It's rewritten when TEST-14 is lifted.
+1. **A read-only key cancelling an order.** No key a caller can be issued today may read without writing, so no caller can reach this refusal. Its handler test covers it: `TestCancelOrderHandler_RefusesAKeyThatMayOnlyRead`.
+   - A nested item belongs to the entry above it.

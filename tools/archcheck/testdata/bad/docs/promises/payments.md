@@ -16,7 +16,3 @@
 
 - **`FAILED`.** `TestChargeOrder_MarksTheOrderFailed`
 - **`REVERSED`.** The provider never reverses a settled payment, so no caller can reach this status.
-
-## Not yet proved as the caller
-
-- **PAY-1.** `TestPayment_SettlesThroughTheFake` stands a fake in for the provider.

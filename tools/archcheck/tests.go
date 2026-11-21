@@ -114,7 +114,7 @@ func checkTestHomes(m *module) ([]problem, error) {
 		}
 
 		if d.IsDir() {
-			if path != m.root && outsideModule(path, d.Name()) {
+			if path != m.root && (outsideModule(path, d.Name()) || m.ignoredDir(m.rel(path))) {
 				return filepath.SkipDir
 			}
 
@@ -205,6 +205,26 @@ func outsideModule(path, name string) bool {
 	_, err := os.Stat(filepath.Join(path, "go.mod"))
 
 	return err == nil
+}
+
+// ignoredDir says whether go.mod's ignore directive leaves the folder at rel
+// out of the module. A path that starts with ./ is a folder from the module
+// root. Any other path is a folder of that name at any depth.
+func (m *module) ignoredDir(rel string) bool {
+	for _, dir := range m.ignoreDirs {
+		fromRoot := strings.HasPrefix(dir, "./")
+		dir = strings.Trim(filepath.ToSlash(filepath.Clean(dir)), "/")
+
+		switch {
+		case dir == "" || dir == ".":
+		case fromRoot && within(rel, dir):
+			return true
+		case !fromRoot && strings.Contains("/"+rel+"/", "/"+dir+"/"):
+			return true
+		}
+	}
+
+	return false
 }
 
 // buildConstraint returns the file's //go:build expression and its line, or

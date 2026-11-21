@@ -586,7 +586,7 @@ On gofi older than v0.10.4, running out of open files stops the server for good,
 **Rule.**
 - `task check` runs `govulncheck` at a pinned version over what ships, `./cmd/...`, or `./...` for a library. The template runs `./...` because it works with any layout, so a service narrows it to `./cmd/...`. CI fails on any finding that reaches that code.
 - The `go` line in `go.mod` (or a `toolchain` line) pins the patch version. Bump it on every Go security release.
-- Code that imports testcontainers or docker never compiles into a production binary. Moving it behind a build tag is paused with the other test changes (TEST-14). Check what a production binary imports with `go list -deps ./cmd/...`.
+- Code that imports testcontainers or docker never compiles into a production binary. Code that does belongs behind its kind's build tag (TEST-1). Check what a production binary imports with `go list -deps ./cmd/...`.
 - gosec is on in the shared lint config. Each `//nolint:gosec` carries a reason.
 
 **Why.**

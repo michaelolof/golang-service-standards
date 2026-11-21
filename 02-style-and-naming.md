@@ -949,5 +949,5 @@ Between 36% and 57% of these were in test files, mostly `paralleltest`, which ha
 | Flows and the harness set up only through boundaries: no seed package, no repository write, no SQL in a flow, no SQL that writes in the harness, no stand-in for the vendor mock | TEST-16 | `tools/archcheck` |
 | The promises in `docs/promises`, the flows, and the operations in `docs/openapi` agree | TEST-18 | `tools/archcheck` |
 | Flow files hold only tests; no test function is left uncalled | TEST-19 | `tools/archcheck` |
-| Test-file rules: fake hygiene, table shape | TEST-5, TEST-7 | review, while restructuring tests is paused (TEST-14) |
+| Test-file rules: fake hygiene, table shape | TEST-5, TEST-7 | review: no linter can judge them |
 | A function reads as a story: title, guards, one level of detail, names | STY-9 | review (the paragraphs are `wsl_v5`) |

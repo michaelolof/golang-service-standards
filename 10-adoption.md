@@ -18,7 +18,7 @@ The first alone isn't enough, because an agent can ignore an instruction file. O
 | ADO-3 | Each code repo has one `AGENTS.md` at its root, which says the rules are mandatory and loads the rule index. A subfolder may add its own. | `task check` (`agents:check`) |
 | ADO-4 | An agent can't finish its turn, or push, while the checks fail. | agent hook, git hook |
 | ADO-5 | `task check` runs every check, and it's a required check on the default branch. | CI |
-| ADO-6 | An existing project fixes everything first, and its existing tests stay as they are. | task list |
+| ADO-6 | An existing project fixes everything first, its tests included. | task list |
 | ADO-7 | A rule changes through a PR on the standard, approved by its owner. Projects upgrade with a normal PR. | review |
 
 ---
@@ -89,7 +89,7 @@ We edited a rule inside a project, and the check failed. Reverting the edit made
 - says the rules are mandatory, and that a conflict must be raised before doing the work;
 - lists which document to read for each area;
 - says a task isn't finished until `task check` passes;
-- repeats the two mistakes agents make most often: inventing stamps, and restructuring existing tests. It also says that new tests follow 07.
+- repeats the two mistakes agents make most often: inventing stamps, and changing what a test asserts during a refactor. It also says that every test follows 07.
 
 [RULES.md](RULES.md) is every rule on one page, generated from the "Rules at a glance" tables: about 200 lines and 3,500 words, so it's short enough to load at the start of every session. An agent reads the full document only for the area it's changing.
 
@@ -207,14 +207,14 @@ Rules that no check can cover are checked in review (COL-10). A rule that keeps 
 1. Add the standard ([ADO-1](#ado-1--add-the-standard-to-a-project)).
 2. Review `AGENTS.old.md`, any `CLAUDE.md`, and any `AGENTS.md` in a subfolder ([ADO-3](#ado-3--one-agentsmd-at-the-root-of-each-code-repo)), so agents stop following instructions that contradict the standard. Do this first.
 3. Run `task check`, and turn what fails into task-list items (COL-15).
-4. Fix the code. Existing tests stay as they are and must keep passing (TEST-14). Test files aren't linted. archcheck may ask for a handler test file, which is a new test, a build line or a file name on a test file, a flow file's function moved into the harness, or an uncalled test function deleted. None of these changes what an existing test asserts.
+4. Fix the code and the tests. Lint and archcheck read test files, so a finding on a test is fixed like any other. Bringing the existing tests up to 07 follows [the recipe below](#bringing-existing-tests-to-the-standard), as changes of their own, never inside a refactor of the code they test (TEST-14).
 5. Make `task check` a required check once it passes.
 
-New feature work waits until step 5. New tests follow [07](07-testing.md) from the start, in every project (TEST-14).
+New feature work waits until step 5. Every test follows [07](07-testing.md), in every project (TEST-14).
 
-### Lifting TEST-14
+### Bringing existing tests to the standard
 
-Restructuring existing tests is paused until the engineer lifts the pause for the project (TEST-14). The project records the lift in its `AGENTS.md`, under `## This project's own rules`, as a line starting `TEST-14 lifted:` with the date. Then it follows these steps, in this order. They come from the two services that have done it.
+Every existing test follows 07 (TEST-14). A project brings its tests there with these steps, in this order, each as changes of its own and never inside a refactor of the code under test. They come from the two services that have done it.
 
 1. **Before.** Run a counting script over all test code, and keep its output. It counts:
    - skips, and resets of shared state;
@@ -222,7 +222,7 @@ Restructuring existing tests is paused until the engineer lifts the pause for th
    - private doubles, by name;
    - `time.Now()`, `context.Background()` and sleeps;
    - tests of the whole app that sit beside handlers and job handlers.
-2. **Tooling.** The test linters run over test files (TEST-13).
+2. **Tooling.** Run `task lint`. The shared config reads test files, so the test linters report on them (TEST-13).
 3. **Mechanical changes,** which a linter or a script makes: tags and file names (TEST-1), no skips (TEST-2), `require` only (TEST-4), and `package x_test`.
 4. **Changes made by reading:** fakes into the three levels, with their conformance suites (TEST-6); helpers (TEST-9, TEST-19); names and tables (TEST-7); and the per-layer recipes (TEST-11, TEST-15).
    - Give each shared fake production's set-up, with its parity test (TEST-6).
@@ -232,7 +232,7 @@ Restructuring existing tests is paused until the engineer lifts the pause for th
    2. Give each existing flow a fate. It's rewritten to prove a promise as the caller (TEST-16). Or it moves beside its job handler or repository, because no caller can reach what it tests. Or it moves down to a unit or handler test.
    3. Every promise that has no flow gets one.
    4. Every removed test names its cover in a ledger: one row per test, with the test that covers its behaviour now.
-   5. At the end, no "Not yet proved as the caller" section is left, no test from the starting list is without a fate, and the promise check passes.
+   5. At the end, no test from the starting list is without a fate, and the promise check passes.
 6. **Evidence.**
    - Run the counting script again, and compare it with the first run.
    - Run `task test:all` three times in a row. It starts each run on a fresh stack.
@@ -296,7 +296,7 @@ This release makes [07](07-testing.md) the default for every new test, and adds 
 
 What changes for an existing project:
 - **New tests follow 07 from the upgrade on** (TEST-14). Where a new test needs a helper the project doesn't have yet, such as an `apitest` constructor or a capability builder, it adds one.
-- **Existing tests stay as they are** until the engineer lifts the pause ([Lifting TEST-14](#lifting-test-14)).
+- **Existing tests stay as they are** until the engineer lifts the pause. A later release removed the pause: see [Bringing existing tests to the standard](#bringing-existing-tests-to-the-standard).
 - **`task setup` rewrites `AGENTS.md`.** Its line on tests now says that new tests follow 07.
 - **The template Taskfile has four test tasks:** `test:up`, `test:down`, `test:integration` and `test:contract`. A project with its own Taskfile copies them, or checks that its own tasks of those names do the same.
 - **archcheck has two new checks.** Every handler file has a test file of the same name beside it (TEST-15). A contract test lives in `test/contract`, every file there has the `contract` tag, and every file in `test/flows` has the `integration` tag (TEST-1).
@@ -330,19 +330,29 @@ What changes for an existing project:
 - **A flow acts as the caller:** it signs in as a caller can, goes through the production servers, and sets up through the API, the queued jobs and the vendor mock (TEST-16).
 - **A test helper does one thing,** in the one home for its kind. Flow files hold only tests, and no test function is left uncalled (TEST-19).
 - **A shared fake starts the way production is set up,** with a parity test beside the real implementation (TEST-6).
-- **archcheck has four new checks,** and a stricter one: flow files hold only tests, flows and the harness set up only through boundaries, the promises agree with the flows and the API description, and no test function is uncalled. The tag check now covers the `flow` tag, the file names in `test/flows`, and the `integration` tag on `_integration_test.go` files. archcheck loads every kind's tag, so a tagged test that doesn't compile stops it.
+- **TEST-14's pause is gone.** No project is under it. Every test follows 07, existing ones included, and a refactor changes a test only enough to compile (TEST-14). A `TEST-14 lifted:` line under `## This project's own rules` in `AGENTS.md` can be deleted.
+- **Lint reads test files.** The shared config sets `tests: true` and every kind's tag, and no longer leaves out `internal/testutils` or `test/`. The test linters TEST-13 lists report on test code for the first time.
+- **archcheck has four new checks,** and a stricter one: flow files hold only tests, flows and the harness set up only through boundaries, the promises agree with the flows and the API description and no two flows share a name, and no test function is uncalled. The tag check now covers the `flow` tag, the file names in `test/flows`, and the `integration` tag on `_integration_test.go` files. archcheck loads every kind's tag, so a tagged test that doesn't compile stops it.
 
-In the upgrade PR, do these in this order. Each one is a fix under TEST-14, because none of them changes what a test asserts:
+Do these in this order. The first four change where code lives or when it builds, not what a test asserts, so they fit in the upgrade PR:
 1. Tag `test/flows` with `flow`, and rename each flow package's `main_integration_test.go` to `main_test.go`.
 2. Replace the test tasks with the template's, and add `test:build` to `check`'s deps. Give the editor every kind's tag ([ADO-1](#ado-1--add-the-standard-to-a-project)).
 3. Move every function out of the flow files into the harness, unchanged.
 4. Delete every test function nothing calls.
-5. Write `docs/promises/`, from [templates/promises.md](templates/promises.md). Under the pause, list each flow that doesn't yet act as the caller under "Not yet proved as the caller". The promise check and the setup check accept those flows, and the harness code only they reach, until the lift.
-6. Delete any guard or promise check of the project's own, because archcheck now runs it (TEST-13).
+5. Write `docs/promises/`, one area at a time, from [templates/promises.md](templates/promises.md). Write each file from the API description and the feature documents, not from the existing flows (TEST-18).
+6. Give each existing flow a fate:
+   - it's rewritten to prove a promise as the caller (TEST-16);
+   - or it moves beside its job handler or repository, because no caller can reach what it tests;
+   - or it moves down to a unit or handler test.
 
-Then run `task check`. A finding that's left is in code a new flow uses, or in a flow no promise file lists. If the fixes are more than the upgrade PR can hold, stay on the old version and plan them as task-list items (ADO-6), as with the structural checks above.
+   Every promise that has no flow gets one. Every removed test names its cover in a ledger: one row per test, with the test that covers its behaviour now.
+7. Give each shared fake production's set-up, with its parity test (TEST-6). Then fix each test that meets a rule it used to skip, by stating what it needs, such as an approved customer of a named kind. If an expected value has to change, stop and ask (COL-4).
+8. Delete any guard or promise check of the project's own, because archcheck now runs it (TEST-13).
+9. Run `task lint`, and fix what the test linters find in test code, following [Bringing existing tests to the standard](#bringing-existing-tests-to-the-standard).
 
-What archcheck found on three codebases before release. The first column is the reference, which has lifted TEST-14. The other two haven't:
+Then run `task check`, and every check passes with no exception for an existing test. Steps 5 to 7 and 9 are usually more than one PR can hold. Plan them as task-list items, one area at a time, and stay on the old version until they're done (ADO-6), as with the structural checks above.
+
+What archcheck found on three codebases before release:
 
 | Finding | A CockroachDB service | A MongoDB service | A ScyllaDB service |
 |---|---|---|---|
@@ -353,6 +363,7 @@ What archcheck found on three codebases before release. The first column is the 
 | Setup outside the boundaries | 3: the first admin is seeded outside `bootstrap.go`, with a seed package and a repository write, and one flow reads a table with SQL | 60, in 23 files: 45 lines in flows that call the database driver, 9 repository writes, 3 fakes in place of the vendor mock, 2 writes from the harness to the database, and 1 seed package | 0 |
 | Test functions nothing calls | 0. It had removed 25 before the release | 19, in 6 packages | 11, in 4 packages |
 | Promises | no `docs/promises` yet: its promise tables live in a separate documents repository | no `docs/promises` | no `docs/promises` |
+| Lint findings in test code, now that lint reads it (none before) | 1,613, in 248 files: 1,036 `wsl_v5` and 244 `modernize`, which golangci-lint can fix itself, then 72 `forbidigo`, 54 `errcheck` and the rest | 587, in 170 files: 307 `wsl_v5`, 80 `forbidigo`, 41 `depguard`, 38 `errcheck` and the rest | 904, in 169 files: 610 `wsl_v5`, 73 `errcheck`, 55 `forbidigo`, 47 `modernize`, 33 `noctx` and the rest |
 
 Each codebase also keeps the findings it had before. archcheck's run took 2 to 4 seconds on each, and up to 4 GB of memory, because the uncalled-code check builds the call graph of every test binary.
 

@@ -16,11 +16,9 @@ import (
 
 const promisesDir = "docs/promises"
 
-// The headings of a promise file's two sections (TEST-18).
-const (
-	notReachable = "Not reachable from outside"
-	notYetProved = "Not yet proved as the caller"
-)
+// notReachable is the heading of a promise file's section for the promises no
+// caller can reach (TEST-18).
+const notReachable = "Not reachable from outside"
 
 var (
 	namedTest   = regexp.MustCompile("`(Test[A-Za-z0-9_]*)`")
@@ -36,7 +34,8 @@ type promiseFile struct {
 	rel        string
 	operations []string
 	promises   []promise
-	entries    []entry
+	// entries are the items under "Not reachable from outside".
+	entries []entry
 }
 
 // promise is one row of an area's table.
@@ -46,21 +45,19 @@ type promise struct {
 	tests []string
 }
 
-// entry is one item under one of the two sections.
+// entry is one item under "Not reachable from outside".
 type entry struct {
-	section string
-	line    int
-	text    string
+	line int
+	text string
 }
 
 // checkPromises checks that the promise files in docs/promises, the flows in
 // test/flows and the operations in docs/openapi agree (TEST-18). It reports:
 //   - a test a promise names that isn't a top-level test in test/flows;
 //   - a promise that names no test;
-//   - a test the "Not reachable" or "Not yet proved" section names that no
-//     test in the module has;
+//   - a test the "Not reachable" section names that no test in the module has;
 //   - a flow no promise names;
-//   - two promises with the same ID;
+//   - two promises with the same ID, or two flows with the same name;
 //   - an operation in docs/openapi that's in no area's Operations line;
 //   - a "Not reachable" entry with no reason, or no test;
 //   - a module with flows or operations, and no docs/promises.
@@ -70,7 +67,7 @@ func checkPromises(m *module) ([]problem, error) {
 		return nil, err
 	}
 
-	flows, tests := m.testsByKind()
+	flows, tests, repeats := m.testsByKind()
 
 	ops, err := m.operations()
 	if err != nil {
@@ -97,6 +94,11 @@ func checkPromises(m *module) ([]problem, error) {
 	}
 
 	problems := checkPromiseFiles(files, flows, tests)
+
+	for _, r := range repeats {
+		first := r.first.fset.Position(r.first.pos)
+		problems = append(problems, r.at.problem("%s is also a flow at %s:%d: a promise names its flow by name, so give each flow its own (TEST-18)", r.name, m.rel(first.Filename), first.Line))
+	}
 	named, covered := map[string]bool{}, map[string]bool{}
 
 	for _, f := range files {
@@ -174,11 +176,11 @@ func checkPromiseFiles(files []promiseFile, flows, tests map[string]place) []pro
 
 			for _, t := range named {
 				if _, ok := tests[t]; !ok {
-					at(e.line, "the %q entry names %s, and no test in the module has that name (TEST-18)", e.section, t)
+					at(e.line, "the %q entry names %s, and no test in the module has that name (TEST-18)", notReachable, t)
 				}
 			}
 
-			if e.section == notReachable && (len(named) == 0 || !hasReason(e.text)) {
+			if len(named) == 0 || !hasReason(e.text) {
 				at(e.line, "a %q entry says why no caller can reach the promise, and names the lower test that covers it (TEST-18)", notReachable)
 			}
 		}
@@ -188,7 +190,10 @@ func checkPromiseFiles(files []promiseFile, flows, tests map[string]place) []pro
 }
 
 // readPromiseFile reads an area's Operations line, its table of promises, and
-// the entries under its two sections.
+// the entries under "Not reachable from outside". It reads Markdown the way a renderer
+// does: a code block holds examples, not promises; a table row may leave out
+// its outer pipes, and \| is a pipe inside a cell; an entry is a top-level list
+// item, and an indented line, nested items included, continues it.
 func readPromiseFile(rel, path string) (promiseFile, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -199,24 +204,43 @@ func readPromiseFile(rel, path string) (promiseFile, error) {
 
 	var (
 		section      string
+		sectionLine  int
+		fence        string
 		inOperations bool
 		idCol        = -1
 		provedCol    = -1
 	)
 
-	for i, line := range strings.Split(string(data), "\n") {
+	for i, line := range strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n") {
 		n, trimmed := i+1, strings.TrimSpace(line)
 
-		if !strings.HasPrefix(trimmed, "|") {
+		if marks := fenceMarks(trimmed); fence == "" && len(marks) >= 3 {
+			fence = marks
+			continue
+		} else if fence != "" {
+			if strings.HasPrefix(marks, fence) && trimmed == marks {
+				fence = ""
+			}
+
+			continue
+		}
+
+		// A line is a table row inside a table, or as its header. A list item
+		// with a pipe in it is still a list item.
+		item, isItem := listItem(line)
+		cells, hasPipe := tableRow(trimmed)
+
+		isRow := hasPipe && !isItem && (idCol >= 0 || cells[0] == "ID")
+		if !isRow {
 			idCol, provedCol = -1, -1
 		}
 
 		switch {
 		case strings.HasPrefix(trimmed, "#"):
-			section, inOperations = strings.TrimSpace(strings.TrimLeft(trimmed, "#")), false
+			section, sectionLine, inOperations = headingText(trimmed), n, false
 		case strings.HasPrefix(trimmed, "**Operations:**"):
 			inOperations = true
-		case trimmed == "" || strings.HasPrefix(trimmed, "**") || strings.HasPrefix(trimmed, "|"):
+		case trimmed == "" || strings.HasPrefix(trimmed, "**") || isRow:
 			inOperations = false
 		}
 
@@ -229,20 +253,18 @@ func readPromiseFile(rel, path string) (promiseFile, error) {
 		}
 
 		switch {
-		case strings.HasPrefix(trimmed, "|"):
-			cells := tableCells(trimmed)
-
+		case isRow:
 			switch {
-			case idCol < 0 && len(cells) > 0 && cells[0] == "ID":
+			case idCol < 0 && cells[0] == "ID":
 				idCol, provedCol = 0, slices.Index(cells, "Proved by")
 			case idCol < 0 || provedCol < 0 || len(cells) <= provedCol || separator.MatchString(cells[0]):
 			case cells[idCol] != "":
 				f.promises = append(f.promises, promise{id: cells[idCol], line: n, tests: testsIn(cells[provedCol])})
 			}
-		case !strings.EqualFold(section, notReachable) && !strings.EqualFold(section, notYetProved):
-		case strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* "):
-			f.entries = append(f.entries, entry{section: sectionName(section), line: n, text: trimmed[2:]})
-		case trimmed != "" && len(f.entries) > 0 && f.entries[len(f.entries)-1].section == sectionName(section):
+		case !strings.EqualFold(section, notReachable):
+		case isItem:
+			f.entries = append(f.entries, entry{line: n, text: item})
+		case trimmed != "" && len(f.entries) > 0 && f.entries[len(f.entries)-1].line > sectionLine:
 			f.entries[len(f.entries)-1].text += " " + trimmed
 		}
 	}
@@ -250,26 +272,94 @@ func readPromiseFile(rel, path string) (promiseFile, error) {
 	return f, nil
 }
 
-// sectionName returns a section heading as the standard spells it.
-func sectionName(heading string) string {
-	if strings.EqualFold(heading, notReachable) {
-		return notReachable
-	}
+var (
+	closingHashes = regexp.MustCompile(`(^|\s+)#+$`)
+	itemMarker    = regexp.MustCompile(`^(?:[-*+]|[0-9]{1,9}[.)])\s+`)
+)
 
-	return notYetProved
+// headingText returns a heading's text, without its opening hashes or the
+// closing ones CommonMark allows, as in "## Not reachable from outside ##".
+func headingText(trimmed string) string {
+	text := strings.TrimSpace(strings.TrimLeft(trimmed, "#"))
+
+	return strings.TrimSpace(closingHashes.ReplaceAllString(text, ""))
 }
 
-// tableCells splits a Markdown table row into its trimmed cells.
-func tableCells(row string) []string {
-	row = strings.TrimSuffix(strings.TrimPrefix(row, "|"), "|")
-
-	var cells []string
-
-	for cell := range strings.SplitSeq(row, "|") {
-		cells = append(cells, strings.TrimSpace(cell))
+// fenceMarks returns the run of backticks or tildes a line starts with.
+func fenceMarks(trimmed string) string {
+	for _, mark := range []string{"`", "~"} {
+		if rest := strings.TrimLeft(trimmed, mark); len(rest) < len(trimmed) {
+			return trimmed[:len(trimmed)-len(rest)]
+		}
 	}
 
-	return cells
+	return ""
+}
+
+// listItem returns the text of a top-level list item: a bullet or a number,
+// indented by less than two spaces. A nested item belongs to the one above it.
+func listItem(line string) (string, bool) {
+	indent := len(line) - len(strings.TrimLeft(line, " \t"))
+	if indent >= 2 || strings.HasPrefix(line, "\t") {
+		return "", false
+	}
+
+	trimmed := strings.TrimSpace(line)
+
+	marker := itemMarker.FindString(trimmed)
+	if marker == "" {
+		return "", false
+	}
+
+	return trimmed[len(marker):], true
+}
+
+// tableRow splits a Markdown table row into its trimmed cells, and says
+// whether the line is one: it has a pipe that isn't escaped. The outer pipes
+// are optional, and \| is a pipe inside a cell.
+func tableRow(trimmed string) ([]string, bool) {
+	var (
+		cells   []string
+		cell    strings.Builder
+		escaped bool
+		pipes   int
+	)
+
+	for _, r := range trimmed {
+		switch {
+		case escaped:
+			if r != '|' {
+				cell.WriteRune('\\')
+			}
+
+			cell.WriteRune(r)
+			escaped = false
+		case r == '\\':
+			escaped = true
+		case r == '|':
+			pipes++
+			cells = append(cells, strings.TrimSpace(cell.String()))
+			cell.Reset()
+		default:
+			cell.WriteRune(r)
+		}
+	}
+
+	if pipes == 0 {
+		return nil, false
+	}
+
+	cells = append(cells, strings.TrimSpace(cell.String()))
+
+	if strings.HasPrefix(trimmed, "|") {
+		cells = cells[1:]
+	}
+
+	if strings.HasSuffix(trimmed, "|") && !strings.HasSuffix(trimmed, "\\|") {
+		cells = cells[:len(cells)-1]
+	}
+
+	return cells, len(cells) > 0
 }
 
 func testsIn(text string) []string {
@@ -304,11 +394,13 @@ func (p place) problem(format string, args ...any) problem {
 }
 
 // testsByKind returns the top-level tests in test/flows, and every test in the
-// module, by name. TestMain isn't a test.
-func (m *module) testsByKind() (flows, all map[string]place) {
+// module, by name, and each flow whose name another flow already has. TestMain
+// isn't a test. A test file this machine's build leaves out, such as a
+// _windows_test.go file elsewhere, is read too.
+func (m *module) testsByKind() (flows, all map[string]place, repeats []repeat) {
 	flows, all = map[string]place{}, map[string]place{}
 
-	m.eachFile(func(p *packages.Package, file *ast.File, rel string) {
+	visit := func(fset *token.FileSet, file *ast.File, rel string) {
 		if !strings.HasSuffix(rel, "_test.go") {
 			return
 		}
@@ -319,16 +411,35 @@ func (m *module) testsByKind() (flows, all map[string]place) {
 				continue
 			}
 
-			at := place{fset: p.Fset, pos: fn.Name.Pos(), m: m}
+			at := place{fset: fset, pos: fn.Name.Pos(), m: m}
 			all[fn.Name.Name] = at
 
-			if within(rel, flowsDir) {
-				flows[fn.Name.Name] = at
+			if !within(rel, flowsDir) {
+				continue
 			}
-		}
-	})
 
-	return flows, all
+			if first, ok := flows[fn.Name.Name]; ok {
+				repeats = append(repeats, repeat{name: fn.Name.Name, at: at, first: first})
+				continue
+			}
+
+			flows[fn.Name.Name] = at
+		}
+	}
+
+	m.eachFile(func(p *packages.Package, file *ast.File, rel string) { visit(p.Fset, file, rel) })
+
+	for _, f := range m.ignoredFiles() {
+		visit(f.fset, f.file, f.rel)
+	}
+
+	return flows, all, repeats
+}
+
+// repeat is a flow whose name another flow already has.
+type repeat struct {
+	name      string
+	at, first place
 }
 
 // operationAt is one operation in a committed API description.

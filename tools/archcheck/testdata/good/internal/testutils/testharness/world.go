@@ -40,7 +40,8 @@ func (w *World) StoredTransfers() int {
 	w.tb.Helper()
 
 	var n int
-	_ = w.pool.QueryRow(w.tb.Context(), "SELECT count(*) FROM transfers").Scan(&n)
+	// The value bound to the statement may hold any word: only the statement counts.
+	_ = w.pool.QueryRow(w.tb.Context(), "SELECT count(*) FROM transfers WHERE status <> $1", "DELETE").Scan(&n)
 
 	return n
 }

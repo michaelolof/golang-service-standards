@@ -19,7 +19,7 @@
 //     no repository writes, no SQL in a flow and no SQL that writes in the
 //     harness, and no stand-in for the vendor mock (TEST-16);
 //   - the promises in docs/promises, the flows and the operations in
-//     docs/openapi agree (TEST-18);
+//     docs/openapi agree, and no two flows share a name (TEST-18);
 //   - no function in test code is left uncalled (TEST-19);
 //   - the committed OpenAPI documents in docs/openapi: a description for every
 //     field and parameter, and an example for every scalar (HTTP-4);

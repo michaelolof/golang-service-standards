@@ -8,7 +8,7 @@ It builds on these earlier areas:
 - [05](05-transport-and-runtime.md): handler constructors, the `routes` package, and `Handle(ctx, Job)`.
 - [06](06-persistence.md): the shared paging, conflict and migrate-twice helpers.
 
-**New tests follow this chapter, in every project.** Restructuring existing tests waits until the engineer lifts the pause for that project (TEST-14). Until then, existing tests are the guardrails during refactors.
+**Every test follows this chapter, in every project, existing tests included (TEST-14).** A refactor changes a test only enough to compile, so the tests still show the behaviour stayed the same.
 
 Without these rules, tests drift. Across three codebases with no test linter enabled, there were about 4,700 `assert.*` calls, 47 `time.Sleep` calls in tests, and 260 test files that reach real infrastructure with no build tag.
 
@@ -42,7 +42,7 @@ With them, tests change. One service applied this chapter in full, and one scrip
 | TEST-11 | Each layer has one testing recipe. | review |
 | TEST-12 | Time, IDs and randomness are injected. Use `synctest` inside a process. Polling across processes must fail on timeout. | forbidigo, testifylint |
 | TEST-13 | Projects keep no `internal/architecture`, and no guard or check of their own. The standard's analyzers and `tools/archcheck` hold the structural checks, and each proves with fixtures that it reads code. Test code stays in tests. | `layers`, `tools/archcheck` (including the test checks of TEST-1, TEST-15, TEST-16, TEST-18 and TEST-19), review |
-| TEST-14 | New tests follow these testing rules in every project. Restructuring existing tests is paused until the engineer lifts the pause for the project. Until then, existing tests stay as they are, as the guardrails. | review |
+| TEST-14 | Every test follows these testing rules, in every project, existing tests included. A refactor changes a test only enough to compile, and bringing a test up to this chapter is its own change. | lint, `tools/archcheck`, review |
 | TEST-15 | Every handler has a test file beside it. Requests go through the production route table and its auth to the real service over fakes. | `tools/archcheck` (the test file), review |
 | TEST-16 | A flow proves one promise as its caller meets it. It signs in as a caller can, goes through the production servers, and sets up through the API, the queued jobs and the vendor mock. It states every choice, and checks only what the caller sees. | `tools/archcheck` (setup through boundaries, flow files, promises), review |
 | TEST-17 | Adapters are tested against an in-process vendor mock that enforces the vendor's documented contract. A contract test, run by hand, checks the vendor itself. | review |
@@ -94,7 +94,7 @@ With them, tests change. One service applied this chapter in full, and one scrip
 | the vendor's real behaviour | a contract test (TEST-17) | default CI |
 
 - **A test that checks two things is split.** Take "placing an order records the customer's usage". The rule, that an approved customer is required, is a core test. The row, that the usage is written in the same statement, is a repository test.
-- **A flow that repeats a lower test is removed,** unless it proves a promise. When a project moves or removes a test, it records the test that covers the behaviour now ([10-adoption](10-adoption.md#lifting-test-14)).
+- **A flow that repeats a lower test is removed,** unless it proves a promise. When a project moves or removes a test, it records the test that covers the behaviour now ([10-adoption](10-adoption.md#bringing-existing-tests-to-the-standard)).
 - Don't assert the same behaviour at two layers. A repository method whose only logic is its query has an integration test and no unit test. The one exception is a promise to a caller. It's also proved by a flow, even when a lower test covers the same branch (TEST-18).
 - A unit test isn't redundant with an integration test when it covers branches that are expensive to reach through the database: each error kind, each guard, each edge case. It runs in milliseconds and points straight at the failing rule.
 
@@ -656,7 +656,7 @@ func TestParseAmount_ReadsOnlyAmountsTheAssetCanHold(t *testing.T) {
 **Rule.**
 - `t.Parallel()` isn't required.
 - Use it where a test shares nothing, such as a pure unit test.
-- Don't convert existing tests to it (TEST-14).
+- Converting existing tests to it isn't required.
 - CI runs `-race -count=1 -shuffle=on`.
 
 **Why.** Making every test parallel makes tests harder to set up, because each database test needs its own data. Converting an existing suite costs even more: about 380 tests across two codebases, for a speed gain nobody had asked for.
@@ -866,9 +866,10 @@ require.EventuallyWithT(t, func(c *assert.CollectT) {
   - the promises in `docs/promises`, the flows and the operations in `docs/openapi` agree (TEST-18);
   - no test function is left uncalled (TEST-19).
 
-  Fixing a finding changes no existing assertion (TEST-14).
+  Fixing a finding changes no expected value (COL-4).
 - **A project that wrote its own guard or promise check deletes it when it upgrades,** because archcheck runs the same check. Two copies of one rule drift, as the architecture tests did.
-- **Tests left to review:** the lint config doesn't read test files, because its checks would make a paused project's existing tests change (TEST-14). So fake hygiene (TEST-5), tables and names (TEST-7), and Go under `testdata/` (TEST-10) are for review. archcheck isn't lint, and a tag fix is allowed under the pause, so archcheck checks the `integration` tag on `_integration_test.go` files.
+- **Lint reads test files,** with every kind's tag, like any other code. The analyzers in `lint/analyzers` check the shape of production code, so they leave test code to the test linters below and to archcheck.
+- **Tests left to review:** fake hygiene (TEST-5), tables and names (TEST-7), and Go under `testdata/` (TEST-10). No linter can judge them.
 
 **Why.** The standard used to ask each project for "one table-driven architecture test", copied into every project, and promised a shared one it never built. Across three codebases, one wrote 20 files and 3,931 lines of it, one wrote 1 file and 506 lines, and one wrote none. One rule set was enforced three ways, or not at all. The largest copy:
 - broke on renames. It hard-coded package paths and exception maps, so renaming four adapter packages meant editing four test files, and none of those edits found a problem;
@@ -885,7 +886,7 @@ A project can't fix that alone, because the checks are only worth having if ever
 import "example.com/myservice/internal/adapters/scylla" //nolint:layers // keeps its name until the rename to scyllastore (LAY-8)
 ```
 
-**Linters** (not applied while restructuring is paused, because the lint config skips test code):
+**Linters** on test code:
 - testifylint, with all checks enabled;
 - thelper, usetesting and copyloopvar;
 - testpackage: use package `x_test`, and package `x` only in `*_internal_test.go`;
@@ -907,57 +908,44 @@ func TestFlowsWriteOnlyThroughTheAPI(t *testing.T) {
 
 **Enforced by** the `layers` analyzer and `tools/archcheck`, each proven by its fixtures, and review.
 
-## TEST-14 · Existing tests are the guardrails
+## TEST-14 · Every test follows this chapter
 
 **Rule.**
-- **New tests follow this chapter, in every project.** New behaviour still gets its acceptance tests first (COL-4).
-- **Restructuring existing tests is paused** until the engineer lifts the pause for the project. Restructuring covers moving or renaming tests, changing assertion style, and changing helpers, harnesses or test infrastructure.
-- **A new test may add what it needs.** Where it needs a helper the project doesn't have yet, such as an `apitest` constructor or a capability builder, it adds one. Where it shares setup that already exists, such as its package's `TestMain`, it uses that setup as it is until the lift.
-- **Existing tests stay as they are during a refactor.** If they still pass, the behaviour hasn't changed.
-- **If a refactor changes a signature,** change the test only enough to compile. Don't change what it asserts. If an assertion has to change, that's a behaviour change: stop and ask (COL-4, COL-11).
-- **A finding from `tools/archcheck` on a test is fixed,** and fixing it isn't restructuring. A missing handler test file is a new test (TEST-15). A wrong tag is fixed with the build line, or by moving a contract test to `test/contract`. Either changes when a test builds, not what it asserts (TEST-1). These are fixes too, because none of them changes what a test asserts:
-  - moving a flow file's function into the harness, unchanged (TEST-19);
-  - renaming a flow's `TestMain` file to `main_test.go` (TEST-1);
-  - deleting a test function nothing calls (TEST-19).
-- **How the rules on promises and helpers apply under the pause:**
-  - **These apply at once,** because each changes where code lives or when it builds, not what a test asserts:
-    - the `flow` tag, and the `main_test.go` name (TEST-1);
-    - moving a flow file's functions into the harness, unchanged (TEST-19);
-    - deleting a test function nothing calls (TEST-19);
-    - the new test tasks (TEST-1);
-    - writing the promise files (TEST-18).
-  - **New flows follow TEST-16 and TEST-18 from the start,** as every new test follows this chapter.
-  - **Rewriting an existing flow waits for the lift.** That's a flow that seeds rows, signs in with a test-only credential, or skips the production servers. Rewriting it is restructuring.
-    - Until the lift, the area's promise file lists it under "Not yet proved as the caller" (TEST-18): the promise, the existing test, and what that test does that a caller can't.
-    - The promise check accepts what that section names. So does the setup check (TEST-16), for those flows and for the harness code only they reach. Code that any other test reaches is still checked, so a new flow, or a harness step a new flow uses, can't seed.
-    - The lift empties the section, and every check then applies in full.
-  - **An existing shared fake gets production's set-up at the lift** (TEST-6), because the tests built on it start meeting rules they used to skip. A new shared fake starts that way, with its parity test.
-- **The engineer lifts the pause per project, and the project records it in its `AGENTS.md`,** under `## This project's own rules`, as a line starting `TEST-14 lifted:` with the date. Lifting it follows the recipe in [10-adoption](10-adoption.md#lifting-test-14).
-- **New projects** have nothing to restructure. They follow this chapter from the start.
+- **Every test follows this chapter, in every project, existing tests included.** New behaviour still gets its acceptance tests first (COL-4).
+- **Bringing an existing test up to this chapter is its own change,** never part of a refactor of the code it tests. [10-adoption](10-adoption.md#bringing-existing-tests-to-the-standard) has the recipe. It changes no expected value without the engineer's agreement (COL-4).
+- **A refactor changes a test only enough to compile.** If the code and its tests change together, nothing shows that the behaviour stayed the same. If an assertion has to change, that's a behaviour change: stop and ask (COL-4, COL-11).
+- **A finding from lint or `tools/archcheck` on a test is fixed,** like one on any other code. archcheck takes no exception for an existing test.
+- **A test adds what it needs.** Where it needs a helper the project doesn't have yet, such as an `apitest` constructor or a capability builder, it adds one in that helper's home (TEST-19).
 
 **Why.**
-- It's risky to change tests during a major refactor. If the code and its tests change together, nothing shows that the behaviour stayed the same.
-- This rule used to say that new tests follow the style already in their package. So in a project under the pause, every new test copied the old patterns, and they kept spreading. A new test changes no existing guardrail, so it can follow this chapter.
-- A project under the pause must still pass `task check`. Two of three services that follow the standard haven't lifted it, and their flows seed rows and write through repositories: 60 such findings in one of them. Rewriting those flows is restructuring. Without the "Not yet proved as the caller" list, that project couldn't upgrade until it lifted the pause. With it, the old flows are named in one place, and nothing new can join them.
+- This rule used to pause restructuring existing tests until the engineer lifted the pause for each project. While it held, existing tests stayed as they were, lint skipped every test file, and new tests in some projects copied the old patterns, so they kept spreading. The old flows the pause protected seeded rows no caller could, and they were the tests that missed an approved business that couldn't open an account.
+- No project is under a pause today. Every project brings its tests to this chapter, and lint reads them.
+- The guardrail stays: tests that change with the code they test can't show the behaviour stayed the same.
 
-**Don't.** Rewrite an existing flow's setup in the upgrade PR, while the pause holds. Its assertions now run on different state, so a pass no longer shows the behaviour stayed the same:
+**Don't.** Change what a test expects in the same change as the refactor:
 
 ```diff
- func TestPlaceOrder_ChargesTheCustomer(t *testing.T) {
- 	w := testharness.New(t)
--	customer := customerstest.SeedApproved(t, w.Repo(), domain.CustomerKindPerson)
-+	customer := w.NewTenant(domain.ModeLive, testharness.ScopesToPlaceOrders...).VerifyCustomer(testharness.NewCustomer(domain.CustomerKindPerson, domain.CountryUS))
+ // internal/core/order/place.go
+-func (s *Service) Place(ctx context.Context, args PlaceArgs) (domain.Order, error) {
++func (s *Service) Place(ctx context.Context, args PlaceArgs) (PlaceResult, error) {
+
+ // internal/core/order/place_test.go
+-	require.Equal(t, domain.OrderStatusPlaced, order.Status)
++	require.Equal(t, domain.OrderStatusPending, result.Order.Status)
 ```
 
-**Do.** List it in its area's promise file until the lift:
+**Do.** Change the test only enough to compile. What it expects stays:
 
-```markdown
-## Not yet proved as the caller
+```diff
+-	order, err := svc.Place(t.Context(), args)
++	result, err := svc.Place(t.Context(), args)
++	order := result.Order
 
-- **ORD-1.** `TestPlaceOrder_ChargesTheCustomer` seeds its customer straight into the table, always as a person, where the tenant's app verifies one through the API.
+ 	require.NoError(t, err)
+ 	require.Equal(t, domain.OrderStatusPlaced, order.Status)
 ```
 
-**Enforced by** review. The promise check and the setup check read the "Not yet proved as the caller" list (TEST-16, TEST-18).
+**Enforced by** lint and `tools/archcheck`, which read every test, and review for what a change does to a test's expected values.
 
 ## TEST-15 · Handler tests
 
@@ -1441,8 +1429,7 @@ func sandbox(tb testing.TB) payments.Config {
   - who calls the area, and the sources its promises come from;
   - an **Operations** line, listing every operation the area covers as `METHOD /path`, in backticks, with the path as the API description writes it;
   - one table, one promise per row, with these columns: ID · Promise · Varies by · Edge cases a caller can meet · Proved by;
-  - **"## Not reachable from outside":** each promise no caller can reach today, why, and the lower test that covers it;
-  - **"## Not yet proved as the caller":** only under TEST-14's pause. Each existing flow that doesn't act as the caller yet, the promise it proves, and what it does that a caller can't. The lift empties it.
+  - **"## Not reachable from outside":** each promise no caller can reach today, why, and the lower test that covers it.
 
   [templates/promises.md](templates/promises.md) is the shape to copy.
 - **What the files cover, together:**
@@ -1471,13 +1458,13 @@ func sandbox(tb testing.TB) payments.Config {
   - When a flow written from its promise fails, either the code is wrong or the promise is. Nothing else.
   - When the fix is clear, fix the code in the same change.
   - When it needs a product decision, the row's edge cases say what the caller gets today and why that's a finding, such as "(a finding: it blames the provider)". The flow asserts today's answer, so any change shows. The completion document lists the finding, and the decision it waits for (COL-9).
-  - Never change an expected value to match the code without the engineer's agreement (COL-4, TEST-14).
+  - Never change an expected value to match the code without the engineer's agreement (COL-4).
 - **The check** fails the build when:
   - a test the table names isn't a top-level test in `test/flows`;
   - a promise names no test;
-  - a test the "Not reachable" or "Not yet proved" section names doesn't exist in the module;
+  - a test the "Not reachable" section names doesn't exist in the module;
   - a top-level test in `test/flows` is named by no promise;
-  - two promises share an ID;
+  - two promises share an ID, or two flows share a name, since a promise names its flow by name;
   - an operation in `docs/openapi` is in no area's Operations line;
   - a "Not reachable" entry gives no reason or names no test;
   - a module has flows or an API description, and no `docs/promises`.
@@ -1553,7 +1540,7 @@ require.Equal(t, "the provider refused the payment", testharness.Refusal(t, resp
   - fakes, builders and seed helpers: the homes in TEST-6 and TEST-10.
 - **A flow file holds tests.** A file under `test/flows` declares no function or method other than `Test…` and `TestMain`. Package-level values, and types that only hold a table's rows, are fine. An area's readers live in the harness beside its steps, so the next area that needs one finds it.
 - **A test composes, and never copies.**
-  - When a test needs a helper that doesn't exist, it adds it to that helper's home in the same change. TEST-14 already lets a new test add what it needs.
+  - When a test needs a helper that doesn't exist, it adds it to that helper's home in the same change.
   - When a journey would hide a step that a test needs, expose the step first. Then build the journey from it.
   - When two areas need the same thing, it's one helper, in the harness.
 - **No test function is left uncalled.** Every function in test code is called, directly or not, by some test. Test code is a `_test.go` file, a package whose name ends in `test`, and anything under `internal/testutils`. A helper that only renames another is removed. TEST-15 says the same of `helpers_test.go`.
@@ -1649,4 +1636,4 @@ func (tn *Tenant) PaidOrder(customer VerifiedCustomer, account Account, currency
 }
 ```
 
-**Enforced by** `tools/archcheck`: a file under `test/flows` declares only tests and `TestMain`, and every function and method in test code is reached from a test, with every kind's tag set. Like `deadcode -test`, the check follows calls from every test binary's entry points. It doesn't report a method a type needs for an interface, because deleting it would break the build. Unused types, fields and constants, one thing per helper, no copies, and variations as arguments are for review.
+**Enforced by** `tools/archcheck`: a file under `test/flows` declares only tests and `TestMain`, and every function and method in test code is reached from a test, with every kind's tag set. Like `deadcode -test`, the check follows calls from every test binary's entry points. It doesn't report what deleting would break the build: a method a type needs for an interface, an example go test only compiles, or anything either calls. A name used only by a file this machine's build leaves out, such as a `_windows_test.go` file, counts as called. Unused types, fields and constants, one thing per helper, no copies, and variations as arguments are for review.

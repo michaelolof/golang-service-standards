@@ -15,7 +15,8 @@ type FakeRepo struct{}
 // NewFakeRepo returns an empty FakeRepo.
 func NewFakeRepo() *FakeRepo { return &FakeRepo{} }
 
-// Get is what transfer.Store needs, so it stays even if no test calls it.
+// Get is what transfer.Store needs. A test passes the fake as the interface,
+// so the call graph counts Get as reached, though no test calls it.
 func (f *FakeRepo) Get(id [16]byte) error {
 	return errx.NewKind(0, errkinds.ErrKindNotFound, "missing")
 }

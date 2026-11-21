@@ -26,7 +26,7 @@ The standard's structural checks: the rules golangci-lint's own linters can't ex
 | `comments` | STY-5 | punctuation beyond ASCII; references to plans, phases, tasks or documents; `Step N:` narration; a `TODO` without `(TICKET-123):` | revive `exported`, `package-comments`; gocritic `commentedOutCode`, `docStub` |
 | `metricnames` | OBS-2 | an instrument name that isn't a constant `<svc>.<capability>.<noun>`, a unit suffix, no `metric.WithUnit`, a duration that isn't a `Float64Histogram` in seconds | review: attributes |
 
-Test files aren't read while restructuring tests is paused (TEST-14), and neither are test packages: `<pkg>test` packages, packages named `…tests`, and anything under `internal/testutils`.
+The analyzers check the shape of production code, so they don't read test files or test packages: `<pkg>test` packages, packages named `…tests`, and anything under `internal/testutils`. Test code follows [07](../../07-testing.md), which the test linters in the shared config and `tools/archcheck` check (TEST-13).
 
 ## Nothing comes from the project
 

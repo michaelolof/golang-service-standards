@@ -10,7 +10,8 @@
 //   - A getter named GetX, a constructor named Build… or Make…, and an error
 //     variable that isn't err or <verb>Err (STY-2).
 //
-// Test packages are left alone while restructuring tests is paused (TEST-14).
+// Test packages are left alone: 07 names tests and their helpers (TEST-7,
+// TEST-15, TEST-19), and the test linters and tools/archcheck check them.
 package names
 
 import (

@@ -108,9 +108,8 @@ func Within(rel, dir string) bool {
 }
 
 // IsTestInfra says whether a package is test infrastructure: anything under
-// internal/testutils, or internal/testutil, the name the lint config also
-// excludes while test restructuring is paused (TEST-14); a test-helper package
-// named <pkg>test (LAY-8, TEST-13); or a package that only holds tests, named
+// internal/testutils, or internal/testutil; a test-helper package named
+// <pkg>test (LAY-8, TEST-13); or a package that only holds tests, named
 // …tests.
 func IsTestInfra(rel, name string) bool {
 	return Within(rel, "internal/testutils") || Within(rel, "internal/testutil") ||
@@ -123,8 +122,8 @@ func IsLayer(name string) bool {
 }
 
 // Files returns pass's files that aren't tests, in the order golangci-lint
-// gives them. The shared config doesn't lint tests (TEST-14), and other drivers
-// may still pass them.
+// gives them. The analyzers check the shape of production code. Test code
+// follows 07, which the test linters and tools/archcheck check (TEST-13).
 func Files(pass *analysis.Pass) []*ast.File {
 	var files []*ast.File
 

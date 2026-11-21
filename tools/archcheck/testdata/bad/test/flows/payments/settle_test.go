@@ -25,3 +25,7 @@ func TestPayment_ASettledPaymentShowsAsSettled(t *testing.T) {
 	_ = w.Pool().QueryRow(t.Context(), "SELECT status FROM transfers")
 	_ = paymentstest.NewFakeProvider()
 }
+
+// A flow with the same name as one in test/flows/orders, so a promise that
+// names it can't say which.
+func TestPlaceOrder_AnOperatorSeesTheOrder(t *testing.T) {}

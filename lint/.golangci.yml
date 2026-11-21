@@ -12,8 +12,8 @@ version: "2"
 run:
   timeout: 10m
   relative-path-mode: gomod # exclusion paths below are module-relative
-  tests: false # restructuring tests is paused, so test files aren't linted (TEST-14)
-  build-tags: [integration] # integration tests must still compile (TEST-1)
+  tests: true # every test follows 07, existing ones included (TEST-14)
+  build-tags: [integration, flow, contract, perf] # every kind of test is linted (TEST-1)
   # No run.go: go.mod's `go` line decides.
 
 linters:
@@ -389,8 +389,7 @@ linters:
     generated: strict
     warn-unused: false # one shared file; some rules are idle in some repos
     paths:
-      - '(^|/)(testutil|testutils|testdata)/' # test helpers, paused with the tests (TEST-14)
-      - '^test/' # black-box suites (TEST-1)
+      - '(^|/)testdata/' # fixtures, not code the project runs (TEST-10)
     rules:
       - path: '_test\.go'
         linters: [gocognit, wrapcheck, musttag, gosec, ireturn, containedctx, errname, requiredtag]

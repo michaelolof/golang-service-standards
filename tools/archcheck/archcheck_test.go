@@ -24,9 +24,13 @@ func run(t *testing.T, dir string) []string {
 
 // A standard project passes, so every check has a clean case to stay quiet on:
 // among them a table of rows in a flow file, bootstrap.go seeding the first
-// admin, a harness that reads with SQL and creates its database, promises that
-// agree with the flows and the API description, and a harness step only a flow
-// calls.
+// admin, a harness that reads with SQL, binds a value that reads like a write
+// and creates its database, promises that agree with the flows and the API
+// description in other valid Markdown (no outer pipes, an escaped pipe, a
+// nested item, a numbered item, closing hashes, a fenced example), a harness
+// step only a flow calls, a helper only an interface method calls, a helper only an
+// example with no output calls, a helper only a _windows_test.go file calls,
+// and a folder go.mod's ignore directive leaves out.
 func TestCheck_AStandardProjectPasses(t *testing.T) {
 	if got := run(t, "testdata/good"); len(got) > 0 {
 		t.Fatalf("a standard project has problems:\n%s", strings.Join(got, "\n"))
@@ -40,7 +44,7 @@ func TestCheck_AStandardProjectPasses(t *testing.T) {
 // table, a binary with no test code, a fully documented operation, a file
 // under internal/http that declares no handler and has no test file, a
 // repository read in a flow, and a fake's method that an interface needs and
-// no test calls.
+// no test calls. The bad module's flows include two with the same name.
 func TestCheck_ReportsEachProblem(t *testing.T) {
 	want := []string{
 		"cmd/services/api/main.go: this binary carries test code: github.com/michaelolof/errx/leaky imports testing. Replace that library, or the package of ours that imports it (TEST-13)",
@@ -58,7 +62,6 @@ func TestCheck_ReportsEachProblem(t *testing.T) {
 		"docs/promises/payments.md:17: a \"Not reachable from outside\" entry says why no caller can reach the promise, and names the lower test that covers it (TEST-18)",
 		"docs/promises/payments.md:17: the \"Not reachable from outside\" entry names TestChargeOrder_MarksTheOrderFailed, and no test in the module has that name (TEST-18)",
 		"docs/promises/payments.md:18: a \"Not reachable from outside\" entry says why no caller can reach the promise, and names the lower test that covers it (TEST-18)",
-		"docs/promises/payments.md:22: the \"Not yet proved as the caller\" entry names TestPayment_SettlesThroughTheFake, and no test in the module has that name (TEST-18)",
 		"internal/adapters/queue/sandbox_test.go:3: a contract test lives in test/contract: move this file there (TEST-1)",
 		"internal/architecture: the standard's analyzers and tools/archcheck now check these rules: delete internal/architecture and the arch task (TEST-13)",
 		"internal/config/mongo.go:7: MONGO_DATABASE is read here, and .env.example doesn't list it (LAY-13)",
@@ -92,6 +95,7 @@ func TestCheck_ReportsEachProblem(t *testing.T) {
 		"test/flows/payments/settle_test.go:10: imports the seed package example.com/bad/internal/repository/transfers/transferstest: set up through the API, the queued jobs and the vendor mock's webhooks (TEST-16)",
 		"test/flows/payments/settle_test.go:23: transfers.Repo.MarkSettled writes through the repository: set up through the API, the queued jobs and the vendor mock's webhooks (TEST-16)",
 		"test/flows/payments/settle_test.go:25: pgxpool.Pool.QueryRow reaches the database: a flow runs no SQL, even to read. Read storage through a harness reader, and set up through the API, the queued jobs and the vendor mock's webhooks (TEST-16)",
+		"test/flows/payments/settle_test.go:31: TestPlaceOrder_AnOperatorSeesTheOrder is also a flow at test/flows/orders/place_test.go:6: a promise names its flow by name, so give each flow its own (TEST-18)",
 	}
 
 	got := run(t, "testdata/bad")
@@ -126,7 +130,13 @@ func TestIsWriteStatement_ReadsWhatTheStatementDoes(t *testing.T) {
 		{name: "an update after a comment", text: "-- mark it paid\n  update orders SET status = $1", want: true},
 		{name: "a write inside a WITH", text: "WITH moved AS (DELETE FROM orders RETURNING id) SELECT count(*) FROM moved", want: true},
 		{name: "a CQL batch", text: "BEGIN BATCH INSERT INTO orders (id) VALUES (?) APPLY BATCH", want: true},
+		{name: "a write split across lines", text: "DELETE\nFROM orders WHERE id = $1", want: true},
+		{name: "a write after a tab", text: "UPDATE\t\torders SET status = $1", want: true},
+		{name: "an update with an alias inside a WITH", text: "WITH due AS (SELECT id FROM orders) UPDATE orders AS o SET status = 'PAID' FROM due WHERE o.id = due.id", want: true},
 		{name: "a read", text: "SELECT count(*) FROM orders", want: false},
+		{name: "a read that locks its rows", text: "WITH next AS (SELECT id FROM jobs FOR UPDATE SKIP LOCKED) SELECT id FROM next", want: false},
+		{name: "a read with a write in a literal", text: "WITH ops AS (SELECT id FROM audit WHERE op = 'DELETE FROM') SELECT count(*) FROM ops", want: false},
+		{name: "a read with a write in a comment", text: "WITH kept AS (SELECT id FROM orders) -- never delete from kept\nSELECT count(*) FROM kept", want: false},
 		{name: "a read inside a WITH", text: "WITH recent AS (SELECT id FROM orders) SELECT count(*) FROM recent", want: false},
 		{name: "a change to the schema", text: "CREATE DATABASE flows_orders", want: false},
 		{name: "no text", text: "", want: false},
@@ -137,6 +147,24 @@ func TestIsWriteStatement_ReadsWhatTheStatementDoes(t *testing.T) {
 				t.Fatalf("isWriteStatement(%q) = %v, want %v", tc.text, got, tc.want)
 			}
 		})
+	}
+}
+
+// A module whose dependency doesn't build stops the run, though no package of
+// the module reports an error of its own. Here the broken file is in another
+// module, and builds only with a kind's tag, so go build alone passes. Before,
+// the call graph met the ill-typed package and archcheck crashed.
+func TestCheck_AModuleWhoseDependencyDoesntBuildStops(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "go.mod", "module example.com/brokendep\n\ngo 1.26\n\nrequire example.com/dep v0.0.0\n\nreplace example.com/dep => ./third_party/dep\n")
+	write(t, dir, "internal/core/x/x.go", "package x\n\nimport _ \"example.com/dep\"\n")
+	write(t, dir, "internal/core/x/x_test.go", "package x\n\nimport \"testing\"\n\nfunc TestX(t *testing.T) {}\n")
+	write(t, dir, "third_party/dep/go.mod", "module example.com/dep\n\ngo 1.26\n")
+	write(t, dir, "third_party/dep/dep.go", "package dep\n")
+	write(t, dir, "third_party/dep/load.go", "//go:build perf\n\npackage dep\n\nvar _ int = \"not an int\"\n")
+
+	if _, err := check(dir); err == nil || !strings.Contains(err.Error(), "doesn't build") {
+		t.Fatalf("check returned %v, want a build failure", err)
 	}
 }
 
@@ -185,8 +213,8 @@ func TestRequires_ReadsTheWholeBuildExpression(t *testing.T) {
 }
 
 // The template a project copies reads the way the check reads a promise file:
-// its four operations, its one promise and the test that proves it, and an
-// entry under each section, with a reason and a test.
+// its four operations, its one promise and the test that proves it, and its
+// "Not reachable from outside" entry, with a reason and a test.
 func TestReadPromiseFile_ReadsTheTemplate(t *testing.T) {
 	f, err := readPromiseFile("templates/promises.md", "../../templates/promises.md")
 	if err != nil {
@@ -202,8 +230,8 @@ func TestReadPromiseFile_ReadsTheTemplate(t *testing.T) {
 		t.Fatalf("promises = %+v, want ORD-1 proved by TestOrder_EachKindOfCustomerPlacesAnOrderAndPaysIt", f.promises)
 	}
 
-	if len(f.entries) != 2 || f.entries[0].section != notReachable || f.entries[1].section != notYetProved {
-		t.Fatalf("entries = %+v, want one under each section", f.entries)
+	if len(f.entries) != 1 {
+		t.Fatalf("entries = %+v, want one", f.entries)
 	}
 
 	if !hasReason(f.entries[0].text) || len(testsIn(f.entries[0].text)) != 1 {

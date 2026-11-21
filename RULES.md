@@ -139,7 +139,7 @@ Generated from the "Rules at a glance" tables. Don't edit it by hand. Each docum
 | TEST-11 | Each layer has one testing recipe. |
 | TEST-12 | Time, IDs and randomness are injected. Use `synctest` inside a process. Polling across processes must fail on timeout. |
 | TEST-13 | Projects keep no `internal/architecture`, and no guard or check of their own. The standard's analyzers and `tools/archcheck` hold the structural checks, and each proves with fixtures that it reads code. Test code stays in tests. |
-| TEST-14 | New tests follow these testing rules in every project. Restructuring existing tests is paused until the engineer lifts the pause for the project. Until then, existing tests stay as they are, as the guardrails. |
+| TEST-14 | Every test follows these testing rules, in every project, existing tests included. A refactor changes a test only enough to compile, and bringing a test up to this chapter is its own change. |
 | TEST-15 | Every handler has a test file beside it. Requests go through the production route table and its auth to the real service over fakes. |
 | TEST-16 | A flow proves one promise as its caller meets it. It signs in as a caller can, goes through the production servers, and sets up through the API, the queued jobs and the vendor mock. It states every choice, and checks only what the caller sees. |
 | TEST-17 | Adapters are tested against an in-process vendor mock that enforces the vendor's documented contract. A contract test, run by hand, checks the vendor itself. |
@@ -214,5 +214,5 @@ Generated from the "Rules at a glance" tables. Don't edit it by hand. Each docum
 | ADO-3 | Each code repo has one `AGENTS.md` at its root, which says the rules are mandatory and loads the rule index. A subfolder may add its own. |
 | ADO-4 | An agent can't finish its turn, or push, while the checks fail. |
 | ADO-5 | `task check` runs every check, and it's a required check on the default branch. |
-| ADO-6 | An existing project fixes everything first, and its existing tests stay as they are. |
+| ADO-6 | An existing project fixes everything first, its tests included. |
 | ADO-7 | A rule changes through a PR on the standard, approved by its owner. Projects upgrade with a normal PR. |

@@ -5,7 +5,6 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -32,7 +31,7 @@ const (
 func checkFlowFiles(m *module) ([]problem, error) {
 	var problems []problem
 
-	m.eachFile(func(p *packages.Package, file *ast.File, rel string) {
+	visit := func(fset *token.FileSet, file *ast.File, rel string) {
 		if !within(rel, flowsDir) {
 			return
 		}
@@ -43,9 +42,15 @@ func checkFlowFiles(m *module) ([]problem, error) {
 				continue
 			}
 
-			problems = append(problems, m.at(p.Fset, fn.Name.Pos(), "%s is a helper in a flow file: move it into the harness, unchanged, and call it from there (TEST-19)", funcName(fn)))
+			problems = append(problems, m.at(fset, fn.Name.Pos(), "%s is a helper in a flow file: move it into the harness, unchanged, and call it from there (TEST-19)", funcName(fn)))
 		}
-	})
+	}
+
+	m.eachFile(func(p *packages.Package, file *ast.File, rel string) { visit(p.Fset, file, rel) })
+
+	for _, f := range m.ignoredFiles() {
+		visit(f.fset, f.file, f.rel)
+	}
 
 	return problems, nil
 }
@@ -89,16 +94,8 @@ const (
 // makes that write. The job runner records each job's end through the queue
 // adapter, as the queue does, so it isn't a seed either.
 //
-// Under TEST-14's pause, an existing flow keeps its setup until the lift, and
-// its area's promise file lists it under "Not yet proved as the caller". Those
-// flows, and the code only they reach, aren't reported. Code any other test
-// reaches is.
+// Every flow is checked, an existing one too (TEST-14).
 func checkFlowSetup(m *module) ([]problem, error) {
-	paused, err := m.pausedFlows()
-	if err != nil {
-		return nil, err
-	}
-
 	var problems []problem
 
 	m.eachFile(func(p *packages.Package, file *ast.File, rel string) {
@@ -116,7 +113,7 @@ func checkFlowSetup(m *module) ([]problem, error) {
 			path, _ := strconv.Unquote(imp.Path.Value)
 
 			switch target, ok := m.relPkg(path); {
-			case !ok, paused.acceptsImport(p, file, path):
+			case !ok:
 			case within(target, "internal/repository") && isTestPackage(target, pkgName(p, path)):
 				problems = append(problems, m.at(p.Fset, imp.Pos(), "imports the seed package %s: %s", path, instead))
 			case inFlows && (within(target, "internal/adapters") || within(target, "internal/ports")) && isTestPackage(target, pkgName(p, path)):
@@ -129,10 +126,6 @@ func checkFlowSetup(m *module) ([]problem, error) {
 		trips := map[int]driverCall{}
 
 		for _, decl := range file.Decls {
-			if paused.accepts(p.Fset, decl) {
-				continue
-			}
-
 			ast.Inspect(decl, func(n ast.Node) bool {
 				call, ok := n.(*ast.CallExpr)
 				if !ok {
@@ -166,141 +159,6 @@ func checkFlowSetup(m *module) ([]problem, error) {
 	})
 
 	return problems, nil
-}
-
-// pausedFlows is what the flows under "Not yet proved as the caller" keep until
-// the engineer lifts TEST-14: the functions of test code no other test reaches.
-type pausedFlows struct {
-	listed bool
-	// reached holds each function of test code some other test reaches, by the
-	// position of its name.
-	reached map[token.Position]bool
-}
-
-// pausedFlows reads the tests the promise files list under "Not yet proved as
-// the caller", and follows every reference to a function of test code from
-// every other test. A function only the listed flows reach is theirs.
-func (m *module) pausedFlows() (pausedFlows, error) {
-	listed, err := m.notYetProved()
-	if err != nil || len(listed) == 0 {
-		return pausedFlows{}, err
-	}
-
-	refs := map[token.Position][]token.Position{}
-
-	var others []token.Position
-
-	m.eachFile(func(p *packages.Package, file *ast.File, rel string) {
-		if !isTestCode(m, p, rel) {
-			return
-		}
-
-		for _, decl := range file.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok {
-				continue
-			}
-
-			at := p.Fset.Position(fn.Name.Pos())
-			if strings.HasSuffix(rel, "_test.go") && fn.Recv == nil && runByGoTest(fn.Name.Name) && !listed[fn.Name.Name] {
-				others = append(others, at)
-			}
-
-			ast.Inspect(fn, func(n ast.Node) bool {
-				if id, ok := n.(*ast.Ident); ok {
-					if used, ok := p.TypesInfo.Uses[id].(*types.Func); ok && used.Pos().IsValid() {
-						refs[at] = append(refs[at], p.Fset.Position(used.Pos()))
-					}
-				}
-
-				return true
-			})
-		}
-	})
-
-	reached := map[token.Position]bool{}
-
-	for len(others) > 0 {
-		at := others[len(others)-1]
-		others = others[:len(others)-1]
-
-		if !reached[at] {
-			reached[at] = true
-			others = append(others, refs[at]...)
-		}
-	}
-
-	return pausedFlows{listed: true, reached: reached}, nil
-}
-
-// accepts says whether decl is a function only the listed flows reach.
-func (pf pausedFlows) accepts(fset *token.FileSet, decl ast.Decl) bool {
-	fn, ok := decl.(*ast.FuncDecl)
-
-	return pf.listed && ok && !pf.reached[fset.Position(fn.Name.Pos())]
-}
-
-// acceptsImport says whether only functions the listed flows reach use the
-// package file imports at path.
-func (pf pausedFlows) acceptsImport(p *packages.Package, file *ast.File, path string) bool {
-	if !pf.listed {
-		return false
-	}
-
-	for _, decl := range file.Decls {
-		if refersTo(p.TypesInfo, decl, path) && !pf.accepts(p.Fset, decl) {
-			return false
-		}
-	}
-
-	return true
-}
-
-// refersTo says whether node names something from the package at path.
-func refersTo(info *types.Info, node ast.Node, path string) bool {
-	found := false
-
-	ast.Inspect(node, func(n ast.Node) bool {
-		if id, ok := n.(*ast.Ident); ok {
-			if pkg, ok := info.Uses[id].(*types.PkgName); ok && pkg.Imported().Path() == path {
-				found = true
-			}
-		}
-
-		return !found
-	})
-
-	return found
-}
-
-// notYetProved returns the tests the promise files name under "Not yet proved
-// as the caller" (TEST-14, TEST-18).
-func (m *module) notYetProved() (map[string]bool, error) {
-	paths, err := filepath.Glob(filepath.Join(m.root, promisesDir, "*.md"))
-	if err != nil {
-		return nil, err
-	}
-
-	listed := map[string]bool{}
-
-	for _, path := range paths {
-		f, err := readPromiseFile(m.rel(path), path)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, e := range f.entries {
-			if e.section != notYetProved {
-				continue
-			}
-
-			for _, t := range testsIn(e.text) {
-				listed[t] = true
-			}
-		}
-	}
-
-	return listed, nil
 }
 
 // driverCall is one call into a database driver.
@@ -359,34 +217,66 @@ func writesRows(info *types.Info, fn *types.Func, call *ast.CallExpr) bool {
 		return recv != nil && namedOf(recv.Type()) != nil && namedOf(recv.Type()).Obj().Name() == "Collection" && documentWrites.MatchString(fn.Name())
 	}
 
-	for _, arg := range call.Args {
-		if isWriteStatement(leadingText(info, arg)) {
-			return true
+	sig := fn.Signature()
+
+	// The statement is the first string the driver takes. The values bound to
+	// it come after, and may hold any word.
+	for i, arg := range call.Args {
+		if isString(paramType(sig, i)) {
+			return isWriteStatement(leadingText(info, arg))
 		}
 	}
 
 	return false
 }
 
-var (
-	sqlComments    = regexp.MustCompile(`(?s)^(\s*(--[^\n]*\n|/\*.*?\*/))*\s*`)
-	writeKeywords  = map[string]bool{"INSERT": true, "UPDATE": true, "DELETE": true, "UPSERT": true, "MERGE": true, "TRUNCATE": true, "REPLACE": true}
-	writeInsideCTE = regexp.MustCompile(`(?i)\b(INSERT|UPDATE|DELETE|UPSERT|MERGE)\b`)
-)
-
-// isWriteStatement says whether a statement's text writes rows: it starts with
-// INSERT, UPDATE, DELETE, UPSERT, MERGE, TRUNCATE or REPLACE, or it's a WITH or
-// a CQL batch that holds one of them.
-func isWriteStatement(text string) bool {
-	text = sqlComments.ReplaceAllString(text, "")
-	first, _, _ := strings.Cut(text, " ")
-	first = strings.ToUpper(strings.TrimSpace(first))
+// paramType returns the type of the parameter the call's argument i fills.
+func paramType(sig *types.Signature, i int) types.Type {
+	params := sig.Params()
 
 	switch {
+	case sig.Variadic() && i >= params.Len()-1:
+		if slice, ok := params.At(params.Len() - 1).Type().(*types.Slice); ok {
+			return slice.Elem()
+		}
+	case i < params.Len():
+		return params.At(i).Type()
+	}
+
+	return nil
+}
+
+func isString(t types.Type) bool {
+	basic, ok := types.Unalias(t).(*types.Basic)
+
+	return ok && basic.Kind() == types.String
+}
+
+var (
+	// sqlNoise is what can hold any word without being a statement: comments
+	// and string literals.
+	sqlNoise      = regexp.MustCompile(`(?s)--[^\n]*|/\*.*?\*/|'(?:[^']|'')*'`)
+	writeKeywords = map[string]bool{"INSERT": true, "UPDATE": true, "DELETE": true, "UPSERT": true, "MERGE": true, "TRUNCATE": true, "REPLACE": true}
+	// writeClause is a write inside a WITH or a CQL batch. SELECT … FOR UPDATE
+	// has no SET, so it isn't one.
+	writeClause = regexp.MustCompile(`(?i)\b(?:INSERT\s+INTO|UPSERT\s+INTO|MERGE\s+INTO|DELETE\s+FROM|UPDATE\s+[\w."]+(?:\s+(?:AS\s+)?\w+)?\s+SET)\b`)
+)
+
+// isWriteStatement says whether a statement's text writes rows: its first
+// word is INSERT, UPDATE, DELETE, UPSERT, MERGE, TRUNCATE or REPLACE, or it's a
+// WITH or a CQL batch that holds a write. Comments and string literals don't
+// count.
+func isWriteStatement(text string) bool {
+	words := strings.Fields(sqlNoise.ReplaceAllString(text, " "))
+	if len(words) == 0 {
+		return false
+	}
+
+	switch first := strings.ToUpper(words[0]); {
 	case writeKeywords[first]:
 		return true
 	case first == "WITH" || first == "BEGIN":
-		return writeInsideCTE.MatchString(text)
+		return writeClause.MatchString(strings.Join(words, " "))
 	default:
 		return false
 	}

@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"slices"
 	"strings"
 
 	"golang.org/x/tools/go/callgraph/rta"
@@ -18,17 +19,21 @@ import (
 //
 // It works like deadcode -test: rapid type analysis from the entry points of
 // every binary the module builds, each test binary included, with every kind's
-// tag set, so a helper only a flow calls counts as called. Two kinds of
-// function are left out, because deleting them would break the build or the
-// tests: a method a type needs for an interface it's converted to, and the
-// tests, benchmarks, fuzz tests and examples go test runs. Generated files
-// aren't read. Unused types, fields and constants are for review.
+// tag set, so a helper only a flow calls counts as called. What deleting would
+// break the build is left out, and so is what it calls: a method a type needs
+// for an interface it's converted to, and every test, benchmark, fuzz test and
+// example, even one go test only compiles. A name a file this machine's build
+// leaves out uses, such as a _windows_test.go file, counts as called.
+// Generated files aren't read. Unused types, fields and constants are for
+// review.
 func checkUncalledTestCode(m *module) ([]problem, error) {
 	prog, pkgs := ssautil.AllPackages(m.loaded, ssa.InstantiateGenerics)
 	prog.Build()
 
-	reached := reachable(prog, pkgs)
-	needed := m.neededByInterfaces(prog, pkgs)
+	built := slices.DeleteFunc(slices.Clone(pkgs), func(p *ssa.Package) bool { return p == nil })
+	needed := m.neededByInterfaces(prog, built)
+	reached := reachable(prog, built, m.kept(prog, built, needed))
+	elsewhere := m.namesInIgnoredFiles()
 
 	var problems []problem
 
@@ -37,16 +42,14 @@ func checkUncalledTestCode(m *module) ([]problem, error) {
 			return
 		}
 
-		testFile := strings.HasSuffix(rel, "_test.go")
-
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Name.Name == "init" || fn.Name.Name == "_" || (testFile && fn.Recv == nil && runByGoTest(fn.Name.Name)) {
+			if !ok || fn.Name.Name == "init" || fn.Name.Name == "_" {
 				continue
 			}
 
 			pos := p.Fset.Position(fn.Name.Pos())
-			if reached[pos] || needed[pos] {
+			if reached[pos] || needed[pos] || elsewhere[fn.Name.Name] {
 				continue
 			}
 
@@ -58,12 +61,10 @@ func checkUncalledTestCode(m *module) ([]problem, error) {
 }
 
 // reachable returns the position of every function that rapid type analysis
-// reaches from the init and main of each main package, test binaries included.
-// A test build compiles its own copy of a package, so a function counts as
-// reached when any copy is.
-func reachable(prog *ssa.Program, pkgs []*ssa.Package) map[token.Position]bool {
-	var roots []*ssa.Function
-
+// reaches from the init and main of each main package, test binaries
+// included, and from roots. A test build compiles its own copy of a package,
+// so a function counts as reached when any copy is.
+func reachable(prog *ssa.Program, pkgs []*ssa.Package, roots []*ssa.Function) map[token.Position]bool {
 	for _, main := range ssautil.MainPackages(pkgs) {
 		roots = append(roots, main.Func("init"), main.Func("main"))
 	}
@@ -80,6 +81,45 @@ func reachable(prog *ssa.Program, pkgs []*ssa.Package) map[token.Position]bool {
 	}
 
 	return reached
+}
+
+// kept returns the functions the build needs whether or not anything calls
+// them, so the analysis starts from them too: each method in needed, and each
+// test, benchmark, fuzz test and example in a _test.go file. go test compiles
+// an example with no output comment without running it.
+func (m *module) kept(prog *ssa.Program, pkgs []*ssa.Package, needed map[token.Position]bool) []*ssa.Function {
+	var found []*ssa.Function
+
+	for _, fn := range m.moduleFunctions(prog, pkgs) {
+		pos := prog.Fset.Position(fn.Pos())
+
+		switch {
+		case !fn.Pos().IsValid() || fn.Synthetic != "":
+		case needed[pos]:
+			found = append(found, fn)
+		case fn.Parent() == nil && fn.Signature.Recv() == nil && strings.HasSuffix(pos.Filename, "_test.go") && runByGoTest(fn.Name()):
+			found = append(found, fn)
+		}
+	}
+
+	return found
+}
+
+// namesInIgnoredFiles returns every name the module's left-out files use.
+func (m *module) namesInIgnoredFiles() map[string]bool {
+	names := map[string]bool{}
+
+	for _, f := range m.ignoredFiles() {
+		ast.Inspect(f.file, func(n ast.Node) bool {
+			if id, ok := n.(*ast.Ident); ok {
+				names[id.Name] = true
+			}
+
+			return true
+		})
+	}
+
+	return names
 }
 
 // neededByInterfaces returns the position of every method that a type of the
